@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Models · Penguin's Storyboard</title>
+<style>
+  :root {
+    --yellow: #ffd21e; --orange: #ff9d00; --ink: #1f2937; --dim: #6b7280; --line: #e5e7eb;
+    --sky: #fff4c2; --paper: #fffdf3; --rule: #dbe7fb; --navy: #232f4f; --card: #ffffff;
+    --good: #0e9f6e; --bad: #e02424; --warn: #c27803;
+    --gguf: #d97706; --mlx: #2563eb; --st: #7c3aed; --other: #6b7280;
+    --hand: "Chalkboard SE", "Marker Felt", "Comic Sans MS", ui-rounded, sans-serif;
+    --round: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); font: 15px/1.5 var(--round);
+    background: radial-gradient(1200px 520px at 50% -80px, #ffe98a 0%, var(--sky) 45%, #fffaf0 100%) no-repeat, #fffaf0; min-height: 100vh; }
+  main { max-width: 980px; margin: 0 auto; padding: 16px 16px 90px; }
+  a { color: #b45309; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .dim { color: var(--dim); }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; }
+  h1 { font: 700 22px/1 var(--round); margin: 0; }
+  h1 a { display: flex; align-items: center; gap: 9px; color: inherit; text-decoration: none; }
+  h1 i { width: 26px; height: 26px; border-radius: 50%; background: var(--yellow); border: 2px solid var(--orange); display: inline-block; }
+  .appnav { display: inline-flex; background: #fff; border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; box-shadow: 3px 3px 0 rgba(31,41,55,.12); }
+  .appnav a { padding: 7px 15px; font: 600 14px var(--round); color: var(--ink); text-decoration: none; }
+  .appnav a + a { border-left: 1px solid var(--line); }
+  .appnav a.on { background: var(--yellow); }
+  .appnav a:hover:not(.on) { background: #fff7d6; }
+  .drive { font-size: 13px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; display: inline-flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot.ok { background: var(--good); }
+
+  h3 { font: 700 18px var(--hand); margin: 34px 0 4px; }
+  h3.first { margin-top: 22px; }
+  p.lead { margin: 0 0 12px; font-size: 14px; }
+
+  /* ---- kits ---- */
+  .kits { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
+  .kit { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .kit.ready { border-color: #bfe8d4; }
+  .kit .khead { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
+  .kit h4 { margin: 0; font: 700 16px/1.3 var(--round); }
+  .kit .kabout { font-size: 14px; }
+  .kit .ksize { font-size: 13px; color: var(--dim); }
+  .kit .knote { font-size: 13px; }
+  .kit .klic { font-size: 12.5px; background: #fff7e0; border: 1px solid #f5d98a; border-radius: 9px; padding: 6px 9px; }
+  .kit details { font-size: 13px; }
+  .kit summary { cursor: pointer; color: var(--dim); }
+  .kfile { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; padding: 6px 0; border-top: 1px solid #f1f2f4; margin-top: 6px; }
+  .kfile .mono { word-break: break-all; }
+  .kfile .yes { color: var(--good); font-weight: 600; } .kfile .no { color: var(--dim); }
+  .kfile .what { grid-column: 1 / -1; color: var(--dim); }
+  .kit .acts { margin-top: auto; padding-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  /* ---- slots ---- */
+  .slot { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 4px 14px; align-items: center; padding: 10px 16px; border-top: 1px solid #f1f2f4; }
+  .slot:first-child { border-top: 0; }
+  .slot .sname b { display: block; font-size: 14.5px; } .slot .sname span { font-size: 12.5px; }
+  .slot select { width: 100%; font: 13px var(--mono); padding: 6px 8px; }
+  .slot .snote { grid-column: 2; font-size: 12.5px; color: var(--dim); }
+  @media (max-width: 620px) { .slot { grid-template-columns: 1fr; } .slot .snote { grid-column: 1; } }
+
+  /* ---- penguin stage ---- */
+  .stage { position: relative; height: 262px; }
+  #pg { position: absolute; left: 50%; bottom: -52px; width: 340px; height: 300px; margin-left: -170px; cursor: pointer; }
+  .bubble { position: absolute; left: calc(50% + 118px); top: 44px; width: min(290px, calc(50% - 126px)); background: #fff; border: 2px solid var(--ink);
+    border-radius: 18px; padding: 11px 14px; font: 15px/1.35 var(--hand); box-shadow: 4px 4px 0 rgba(31,41,55,.12); transform-origin: 0 60%; }
+  .bubble::before { content: ""; position: absolute; left: -11px; top: 46px; width: 18px; height: 18px; background: #fff;
+    border-left: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: rotate(45deg); }
+  .bubble.pop { animation: pop .38s cubic-bezier(.2,1.5,.4,1); }
+  @keyframes pop { from { transform: scale(.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  /* ---- notepad ---- */
+  .pad { position: relative; z-index: 2; background: var(--paper); border: 1px solid #e8dfb8; border-radius: 6px 6px 16px 16px;
+    box-shadow: 0 1px 0 #efe6c0, 0 3px 0 #fffdf3, 0 4px 0 #efe6c0, 0 7px 0 #fffdf3, 0 8px 0 #e8dfb8, 0 22px 40px -18px rgba(120,80,0,.35); }
+  .binding { height: 30px; border-radius: 5px 5px 0 0; background: linear-gradient(#ffb020, var(--orange)); border-bottom: 2px solid #d97f00; }
+  .hand { position: absolute; top: -9px; width: 40px; height: 30px; background: var(--navy); border-radius: 50% 50% 46% 46%; z-index: 3; box-shadow: inset 0 -5px 0 rgba(0,0,0,.18); }
+  .hand.l { left: calc(50% - 104px); transform: rotate(-8deg); } .hand.r { left: calc(50% + 64px); transform: rotate(8deg); }
+  .sheet { padding: 20px 22px 24px 58px; position: relative;
+    background: repeating-linear-gradient(transparent 0 31px, var(--rule) 31px 32px); border-radius: 0 0 16px 16px; }
+  .sheet::before { content: ""; position: absolute; left: 42px; top: 0; bottom: 0; width: 2px; background: #ffc9c9; }
+
+  form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #q { flex: 1 1 300px; min-width: 0; font: 19px/1.3 var(--hand); color: var(--ink); background: rgba(255,255,255,.75); border: 0; border-bottom: 3px dashed #c9cfda;
+    padding: 8px 6px; outline: none; border-radius: 6px 6px 0 0; }
+  #q:focus { border-bottom-color: var(--orange); background: #fff; }
+  #q::placeholder { color: #a3aab6; }
+  button { font: 600 14px var(--round); border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 9px; padding: 8px 13px; cursor: pointer; }
+  button:hover { border-color: #c4c9d2; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--yellow); border-color: var(--orange); box-shadow: 0 3px 0 var(--orange); padding: 10px 18px; font-size: 15px; transition: transform .08s, box-shadow .08s; }
+  button.primary:active:not(:disabled) { transform: translateY(3px); box-shadow: none; }
+  button.primary:disabled { opacity: .45; cursor: default; }
+  button.primary.kbtn { padding: 8px 14px; font-size: 14px; }
+  button.small { padding: 4px 10px; font-size: 13px; font-weight: 500; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .chip { border-radius: 999px; padding: 4px 11px; font-size: 13px; font-weight: 500; background: #fff; }
+  .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .opts { display: flex; gap: 8px 22px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; align-items: center; }
+  .opts > div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select { font: 13px var(--round); padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); max-width: 100%; }
+  .err { color: var(--bad); white-space: pre-wrap; font-size: 13.5px; margin-top: 10px; }
+  .kit .err { margin-top: 0; font-size: 13px; }
+
+  /* ---- things written on the sheet ---- */
+  .slip { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-top: 12px; animation: rise .42s cubic-bezier(.2,1.3,.4,1) backwards; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) rotate(-.6deg) scale(.97); } to { opacity: 1; transform: none; } }
+  .about { padding: 14px 16px; }
+  .about h2 { font: 700 19px/1.2 var(--hand); margin: 0; }
+  .about .repo { word-break: break-all; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0 0; font-size: 14px; }
+  .facts dt { color: var(--dim); } .facts dd { margin: 0; }
+  .callout { margin-top: 10px; background: #fff7e0; border: 1px solid #f5d98a; border-radius: 9px; padding: 8px 11px; font-size: 13.5px; }
+  .section { font: 700 16px var(--hand); margin: 20px 0 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .section small { font: 400 13px var(--round); color: var(--dim); }
+  .pick { display: flex; gap: 12px; padding: 12px 14px; cursor: pointer; align-items: flex-start; }
+  .pick.on { border-color: var(--orange); box-shadow: 0 0 0 2px #ffe08a; }
+  .pick.muted { opacity: .62; }
+  .pick input { margin-top: 3px; }
+  .pick .body { flex: 1; min-width: 0; }
+  .pick .top { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+  .pick .title { font-weight: 700; font-size: 15.5px; }
+  .pick .note { font-size: 13.5px; margin-top: 2px; }
+  .pick .need { font-size: 13px; color: var(--dim); margin-top: 2px; }
+  .pick .file { color: #9099a6; margin-top: 3px; word-break: break-all; }
+  .pick .size { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .tag { font-size: 11px; font-weight: 700; letter-spacing: .03em; padding: 1px 7px; border-radius: 6px; border: 1px solid currentColor; white-space: nowrap; background: #fff; }
+  .tag.GGUF { color: var(--gguf); } .tag.MLX { color: var(--mlx); } .tag.SAFETENSORS { color: var(--st); } .tag.OTHER { color: var(--other); }
+  .tag.KIT { color: #b45309; } .tag.OLLAMA { color: #0e7490; }
+  .badge { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .badge.star { background: var(--yellow); border: 1px solid var(--orange); }
+  .badge.q { background: #ede9fe; color: #5b21b6; } .badge.b { background: #dbeafe; color: #1e40af; } .badge.s { background: #f3f4f6; color: #374151; }
+  .badge.fits { background: #def7ec; color: #03543f; } .badge.tight { background: #fdf6b2; color: #723b13; } .badge.big { background: #fde8e8; color: #9b1c1c; }
+  .badge.old { background: #f3f4f6; color: #6b7280; }
+  details.slip > summary { padding: 10px 14px; cursor: pointer; font-size: 14px; list-style-position: inside; }
+  details.slip .row { display: flex; gap: 10px; align-items: center; padding: 6px 14px; border-top: 1px solid #f1f2f4; font-size: 13.5px; cursor: pointer; }
+  .row .name { flex: 1; min-width: 0; word-break: break-all; }
+  .row .size, .res .size { color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .scroll { max-height: 250px; overflow: auto; }
+  input[type=checkbox] { accent-color: var(--orange); width: 16px; height: 16px; flex: none; }
+  .foot { position: sticky; bottom: 10px; margin-top: 16px; background: #fff; border: 2px solid var(--ink); border-radius: 14px; padding: 10px 14px;
+    display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; box-shadow: 4px 4px 0 rgba(31,41,55,.12); z-index: 4; }
+  .res { display: flex; gap: 10px; align-items: center; padding: 10px 14px; cursor: pointer; }
+  .res:hover { border-color: var(--orange); }
+  .res .name { flex: 1; min-width: 0; } .res .name b { word-break: break-all; font-family: var(--mono); font-size: 13px; }
+  .res .kind { font-size: 13px; color: var(--dim); }
+
+  /* ---- cheat sheet, downloads, library ---- */
+  .cheat { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 10px; }
+  .cheat .slip { margin: 0; padding: 14px 16px; border-top-width: 5px; animation: none; }
+  .cheat h4 { margin: 0 0 6px; font: 700 16px var(--round); }
+  .cheat dl { margin: 0; font-size: 13.5px; } .cheat dt { color: var(--dim); font-size: 12px; margin-top: 7px; } .cheat dd { margin: 0; }
+  .gloss { font-size: 13.5px; margin-top: 12px; padding: 12px 16px; animation: none; }
+  .gloss.row2 { display: flex; gap: 10px 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .box { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-top: 10px; }
+  .empty { padding: 16px; color: var(--dim); }
+  .job, .libd { padding: 12px 16px; border-top: 1px solid #f1f2f4; } .job:first-child, .libd:first-child { border-top: 0; }
+  .libd > summary { display: flex; gap: 10px; align-items: center; cursor: pointer; list-style: none; }
+  .libd > summary::-webkit-details-marker { display: none; }
+  .libd > summary::before { content: "▸"; color: var(--dim); font-size: 12px; width: 10px; flex: none; }
+  .libd[open] > summary::before { content: "▾"; }
+  .libd .name { flex: 1; min-width: 0; word-break: break-all; }
+  .wrow { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; padding: 8px 0 0 20px; font-size: 13.5px; }
+  .wrow .name { flex: 1 1 220px; min-width: 0; word-break: break-all; }
+  .wrow .size { color: var(--dim); white-space: nowrap; font-size: 13px; }
+  .job-top { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .job-meta { font-size: 13px; color: var(--dim); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .progress { height: 10px; background: #f3f4f6; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+  .progress i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--yellow), var(--orange)); transition: width .6s; }
+
+  /* ---- where to save ---- */
+  button.drive { font-weight: 500; cursor: pointer; } button.drive u { color: #b45309; }
+  dialog { border: 2px solid var(--ink); border-radius: 18px; padding: 0; width: min(640px, calc(100vw - 24px)); max-height: calc(100vh - 40px);
+    color: var(--ink); background: var(--paper); box-shadow: 6px 6px 0 rgba(31,41,55,.15); font: 15px/1.5 var(--round); }
+  dialog::backdrop { background: rgba(60,40,0,.35); }
+  .dlg { padding: 20px 22px 22px; }
+  .dlg h2 { font: 700 21px var(--hand); margin: 0 0 4px; }
+  .place { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 12px; }
+  .place.on { border-color: var(--orange); box-shadow: 0 0 0 2px #ffe08a; }
+  .place .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .place .top b { font-size: 16px; } .place .top .sp { flex: 1; }
+  .place .advice { font-size: 13.5px; margin-top: 6px; padding-left: 10px; border-left: 3px solid var(--good); }
+  .place .advice.warn { border-color: #e3a008; } .place .advice.bad { border-color: var(--bad); }
+  .place .acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .meter { height: 6px; background: #f3f4f6; border-radius: 99px; margin-top: 8px; overflow: hidden; } .meter i { display: block; height: 100%; background: #9ca3af; }
+  .dlg-foot { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+  #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px;
+    font-size: 14px; max-width: min(560px, calc(100vw - 24px)); display: none; z-index: 20; box-shadow: 0 10px 30px -10px rgba(0,0,0,.5); }
+
+  @media (max-width: 760px) {
+    .stage { height: auto; padding-top: 8px; }
+    .bubble { position: relative; left: 0; top: 0; width: auto; transform-origin: 50% 100%; }
+    .bubble::before { left: calc(50% - 9px); top: auto; bottom: -11px; border: 0; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
+    #pg { position: relative; display: block; left: 0; bottom: 0; margin: -20px auto -52px; }
+    .sheet { padding: 18px 14px 20px 34px; } .sheet::before { left: 22px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .slip, .bubble.pop { animation: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><a href="/" title="Back to your movies"><i></i>Penguin's Storyboard</a></h1>
+    <nav class="appnav" aria-label="Sections"><a href="/">Movies</a><a href="/music/">Music</a><a href="/models" class="on">Models</a></nav>
+  </header>
+
+  <h3 class="first">What the movie maker needs</h3>
+  <p class="lead dim">A kit is the exact set of files one feature needs. Download a kit and that feature switches on. Kits are saved inside the app's own engine folder.</p>
+  <div class="kits" id="kits"><div class="kit"><div class="dim">Checking what is here…</div></div></div>
+
+  <h3>Downloads</h3>
+  <p class="lead dim">One thing downloads at a time. You can stop a download and carry on later: it picks up where it stopped.</p>
+  <div class="box" id="jobs"><div class="empty">Nothing downloading.</div></div>
+
+  <h3>Which file each job uses</h3>
+  <p class="lead dim">Got another version of the same model, say a bigger or smaller one? Choose it here.</p>
+  <div class="box" id="slots"><div class="empty">Loading…</div></div>
+  <div class="slip gloss row2">
+    <span>A different file only works if it is the same model family as the usual one. If pictures or videos start failing, switch back.</span>
+    <button type="button" class="small" id="slotsReset">Back to the defaults</button>
+  </div>
+
+  <h3>Download something else</h3>
+  <p class="lead dim">Anything on Hugging Face. Paste a link and the penguin explains what it is and which file to take.
+    <button type="button" class="drive" id="where" title="Choose where these downloads are saved"><span class="dot" id="dot"></span><span id="drive">Checking…</span> <u>change</u></button></p>
+
+  <div class="stage">
+    <div class="bubble" id="say">Hi! Paste a Hugging Face link on my notepad, or just type what you are looking for.</div>
+    <canvas id="pg" width="680" height="600" title="Poke me"></canvas>
+  </div>
+
+  <div class="pad">
+    <div class="hand l"></div><div class="hand r"></div>
+    <div class="binding"></div>
+    <div class="sheet">
+      <form id="form">
+        <input type="text" id="q" placeholder="Paste a link or type a model name…" autocomplete="off" spellcheck="false">
+        <button class="primary" id="go">Find</button>
+      </form>
+      <div class="opts">
+        <div><span class="dim">Show me</span>
+          <span class="chips" id="filter">
+            <button type="button" class="chip on" data-f="">Any</button>
+            <button type="button" class="chip" data-f="GGUF">GGUF</button>
+            <button type="button" class="chip" data-f="MLX">MLX</button>
+            <button type="button" class="chip" data-f="SAFETENSORS">Safetensors</button>
+          </span>
+        </div>
+        <div><label for="mem" class="dim">The computer that will run it has</label>
+          <select id="mem" title="On a PC, use the graphics card's memory. On a Mac, use the Mac's total memory.">
+            <option value="0">not sure yet</option>
+            <option value="8">8 GB</option><option value="12">12 GB</option><option value="16">16 GB</option>
+            <option value="24">24 GB</option><option value="32">32 GB</option><option value="48">48 GB</option>
+            <option value="64">64 GB</option><option value="128">128 GB</option><option value="256">256 GB</option>
+            <option value="512">512 GB</option><option value="1024">1 TB</option><option value="2048">2 TB</option>
+          </select>
+        </div>
+      </div>
+      <div id="msg" class="err"></div>
+      <div id="result"></div>
+    </div>
+  </div>
+
+  <h3>On the drive</h3>
+  <p class="lead dim">What you have downloaded. Open one to use a file of it in the movie maker.</p>
+  <div class="box" id="library"><div class="empty">Loading…</div></div>
+
+  <h3>Cheat sheet: which format do I want?</h3>
+  <div class="cheat">
+    <div class="slip" style="border-top-color:var(--gguf)">
+      <h4>GGUF</h4><div>The easy one. A single file you can run almost anywhere.</div>
+      <dl><dt>Runs in</dt><dd>Ollama, llama.cpp, LM Studio</dd><dt>Computer</dt><dd>Mac, Windows or Linux, with or without a graphics card</dd><dt>Pick it when</dt><dd>You want to chat with a model and are not sure what computer you will have</dd></dl>
+    </div>
+    <div class="slip" style="border-top-color:var(--mlx)">
+      <h4>MLX</h4><div>Made for Apple chips, so it is quick on a Mac.</div>
+      <dl><dt>Runs in</dt><dd>LM Studio, mlx-lm</dd><dt>Computer</dt><dd>Apple Silicon Macs only (M1 and newer)</dd><dt>Pick it when</dt><dd>You know it will run on a Mac</dd></dl>
+    </div>
+    <div class="slip" style="border-top-color:var(--st)">
+      <h4>Safetensors</h4><div>The original, as the makers released it.</div>
+      <dl><dt>Runs in</dt><dd>transformers and vLLM for chat models; ComfyUI for image and video models</dd><dt>Computer</dt><dd>Best with an NVIDIA graphics card</dd><dt>Pick it when</dt><dd>You want the untouched original, or an image or video model</dd></dl>
+    </div>
+  </div>
+  <div class="slip gloss">
+    <b>What do Q4, Q8, int8 and bf16 mean?</b> They say how tightly the model is squeezed. A smaller number is a smaller file that needs less memory but is a little less sharp.
+    <b>Q4</b> is the everyday choice, <b>Q8</b> or <b>8-bit</b> is nearly the original, and <b>F16 / bf16</b> is the original itself. The rule of thumb: the file has to fit in the computer's memory with a little room to spare.
+  </div>
+</main>
+
+<dialog id="places"><div class="dlg">
+  <h2>Where should I keep these downloads?</h2>
+  <div class="dim" style="font-size:14px">Models are big, often 5 to 100 GB each. Pick this computer or an external drive. You can change this any time. Kits are not affected: they always go in the engine's own folder.</div>
+  <div id="placeList"></div>
+  <div class="place">
+    <div class="top"><b>Another folder</b></div>
+    <form id="customForm" style="margin-top:8px"><input type="text" id="custom" placeholder="/full/path/to/a/folder" style="flex:1 1 220px;min-width:0;font:14px var(--mono);padding:8px 10px;border:1px solid #c9cfda;border-radius:9px"><button class="small">Save here</button></form>
+  </div>
+  <details class="place"><summary style="cursor:pointer"><b>Using an external drive? How it should be formatted</b></summary>
+    <div style="font-size:13.5px;margin-top:8px">
+      <p style="margin:0 0 6px"><b>exFAT</b> is the one to use: it has no file size limit and works on Mac, Windows and Linux, so the drive can move between computers.</p>
+      <p style="margin:0 0 6px"><b>FAT32</b> (how many USB sticks come) will not work: it cannot hold a file bigger than 4 GB.</p>
+      <p style="margin:0 0 6px"><b>APFS</b> is fine if only Macs will ever read the drive. <b>NTFS</b> is fine if only Windows will.</p>
+      <p style="margin:0" id="howto"></p>
+    </div>
+  </details>
+  <div id="placeMsg" class="err"></div>
+  <div class="dlg-foot"><button type="button" id="placesClose">Done</button></div>
+</div></dialog>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const API = '/models/api';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LABEL = {GGUF: 'GGUF', MLX: 'MLX', SAFETENSORS: 'Safetensors', OTHER: 'Other', KIT: 'Kit', OLLAMA: 'Ollama'};
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+let filter = '', repo = null, fmt = '', picked = new Set(), freeBytes = 0, lastStates = '', jobStates = {}, mem = +(store.get('mem') || 0);
+let ST = null, slotLabels = {}, music, soundsBusy = 0;   // music: undefined = not asked yet, null = not reachable from here
+
+function say(text, mood) {
+  const b = $('say'); b.textContent = text; b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+  if (mood && window.penguin) window.penguin.mood(mood);
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 7000); }
+function size(n) {
+  if (!n) return '0';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0;
+  while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+  return n.toFixed(n >= 100 || i < 2 ? 0 : 1) + ' ' + u[i];
+}
+function shortPath(p) {
+  p = p.replace('/Volumes/', '');
+  const parts = p.split('/').filter(Boolean);
+  return p.length > 44 && parts.length > 2 ? '…/' + parts.slice(-2).join('/') : p;
+}
+function count(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n); }
+function eta(s) {
+  if (!isFinite(s) || s <= 0) return '';
+  if (s < 90) return Math.round(s) + ' sec left';
+  if (s < 5400) return Math.round(s / 60) + ' min left';
+  return (s / 3600).toFixed(1) + ' hr left';
+}
+function hardware(gb) {
+  const t = [[8, 'most graphics cards and any recent Mac'], [12, 'a 12 GB graphics card or a 16 GB Mac'], [16, 'a 16 GB graphics card or a 24 GB Mac'],
+    [24, 'a 24 GB graphics card or a 32 GB Mac'], [32, 'a 32 GB graphics card or a 48 GB Mac'], [48, 'a 48 GB workstation card or a 64 GB Mac'],
+    [96, 'a 128 GB Mac or several graphics cards'], [190, 'a 256 GB Mac or a multi-card server'], [480, 'a 512 GB Mac or a big server'],
+    [960, 'a server with 1 TB of memory'], [1920, 'a server with 2 TB of memory']];
+  const hit = t.find(r => gb <= r[0]);
+  return hit ? 'fits ' + hit[1] : 'needs a large server';
+}
+async function call(path, body) {
+  const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Storyboard': '1'}, body: JSON.stringify(body)} : {cache: 'no-store'});
+  const j = await r.json().catch(() => ({error: 'That did not work.'}));
+  if (!r.ok) throw new Error(j.error || 'Something went wrong.');
+  return j;
+}
+function plainError(text) {
+  if (/Device not configured|Errno 6\b|No such file or directory|Input\/output error/.test(text)) return 'The drive was disconnected while this was downloading.';
+  if (/No space left/.test(text)) return 'The drive ran out of room.';
+  if (/pull model manifest|manifest unknown/.test(text)) return 'Ollama does not have a model by that name.';
+  if (/RepositoryNotFound|404 Client Error/.test(text)) return 'Hugging Face says that model is not there (or it is private).';
+  if (/GatedRepo|401 Client Error|403 Client Error/.test(text)) return 'Hugging Face refused: this model asks you to accept its terms first.';
+  if (/ConnectionError|Max retries|Temporary failure|Name or service not known|nodename nor servname/.test(text)) return 'Could not reach Hugging Face. Check the internet connection and try again.';
+  const lines = text.split('\n').filter(l => !/^\s*(File "|Traceback|[~^ ]+$)/.test(l));
+  return lines.slice(-2).join('\n') || text;
+}
+function progressBlock(j) {
+  const pct = j.total ? Math.min(100, j.done / j.total * 100) : 0;
+  let meta = j.state === 'queued' ? 'Waiting its turn' : j.total > 1 ? `${size(j.done)} of ${size(j.total)} (${pct.toFixed(pct < 10 ? 1 : 0)}%)` : 'Starting…';
+  if (j.state === 'running' && j.total > 1 && j.done >= j.total) meta = 'Finishing up, writing to the drive…';
+  else if (j.state === 'running' && j.speed > 0) meta += ` · ${size(j.speed)}/s · ${eta((j.total - j.done) / j.speed)}`;
+  return `<div class="progress"><i style="width:${pct}%"></i></div><div class="job-meta">${esc(meta)}</div>`;
+}
+
+// ---- kits ----
+const KIT_WORD = {ready: 'Ready', missing: 'Not here yet', partial: 'Partly here', needs_finish: 'One more step', downloading: 'Downloading'};
+const KIT_BADGE = {ready: 'fits', missing: 's', partial: 'tight', needs_finish: 'tight', downloading: 'b'};
+const kitHtml = {}, openKits = new Set();
+function names(list, max = 4) { return list.slice(0, max).join(', ') + (list.length > max ? ` and ${list.length - max} more` : ''); }
+function kitCard(k) {
+  let state = k.state, body = '', acts = '';
+  if (k.kind === 'files' || k.kind === 'fast') {
+    const n = k.files.length;
+    body += `<div class="ksize">${size(k.bytes)} in ${n} file${n > 1 ? 's' : ''}` +
+      (k.kind === 'fast' ? `, plus about ${size(k.merged_bytes)} of disk for the finished fast model` : '') + '</div>';
+    body += `<details data-kit="${k.id}" ${openKits.has(k.id) ? 'open' : ''}><summary>What is in it</summary>` +
+      k.files.map(f => `<div class="kfile"><span class="mono">${esc(f.name)}</span><span class="${f.have ? 'yes' : 'no'}">${f.have ? 'here' : k.kind === 'fast' && k.merged ? 'not needed any more' : 'missing'}</span><span class="what">${esc(f.what)}, ${size(f.bytes)}</span></div>`).join('') +
+      `<div class="kfile"><span class="what">From <a href="https://huggingface.co/${esc(k.repo)}" target="_blank" rel="noopener">${esc(k.repo)}</a> on Hugging Face.</span></div></details>`;
+    if (k.licence && k.licence.note) body += `<div class="klic">${esc(k.licence.note)} <a href="${esc(k.licence.url)}" target="_blank" rel="noopener">The model's page</a></div>`;
+    if (k.job) {
+      body += progressBlock(k.job);
+      acts = `<button class="small" data-cancel="${k.job.id}">Cancel</button>`;
+    } else if (k.kind === 'fast' && state === 'needs_finish' && k.baking) {
+      body += '<div class="knote">The Storyboard queue is baking the fast video model now. This turns to Ready when it is done.</div>';
+    } else if (k.kind === 'fast' && state === 'needs_finish') {
+      body += '<div class="knote">The add-on is here. One more step bakes it into its own fast video model. That takes a few minutes and about 10 GB of disk.</div>';
+      acts = '<button class="primary kbtn" data-bake="1">Finish setting up Fast video</button>';
+    } else if (k.kind === 'fast' && state === 'partial') {
+      body += '<div class="knote">The add-on is here. It needs the Video kit before it can be finished.</div>';
+    } else if (state !== 'ready') {
+      if (k.last && k.last.state === 'error') body += `<div class="err">${esc(plainError(k.last.error))}</div>`;
+      if (k.last && k.last.state === 'cancelled') body += '<div class="knote dim">Stopped. Carrying on picks up where it left off.</div>';
+      if (k.kind === 'fast' && !k.base) body += '<div class="knote dim">You also need the Video kit.</div>';
+      const label = k.last && k.last.state === 'error' ? 'Try again' : k.last && k.last.state === 'cancelled' ? `Carry on (${size(k.need)} to go)`
+        : state === 'partial' ? `Download the rest (${size(k.need)})` : `Download (${size(k.need)})`;
+      acts = `<button class="primary kbtn" data-kitdl="${k.id}">${label}</button>`;
+    }
+  } else if (k.kind === 'engine') {
+    body += `<div class="knote">${esc(k.detail)}</div>`;
+  } else if (k.kind === 'ollama') {
+    const w = k.writer;
+    if (k.job) {
+      body += `<div class="knote">Downloading ${esc(k.job.repo)}${k.job.note ? ' · ' + esc(k.job.note) : ''}</div>` + progressBlock(k.job);
+      acts = `<button class="small" data-cancel="${k.job.id}">Cancel</button>`;
+    } else if (w.models.length) {
+      body += `<div class="knote">${w.models.length} writing model${w.models.length > 1 ? 's' : ''} on this computer: <span class="mono">${esc(names(w.models))}</span>. Any of them can write your scripts.</div>`;
+    } else if (!w.installed) {
+      body += '<div class="knote">Ollama is not installed. Get it from <a href="https://ollama.com" target="_blank" rel="noopener">ollama.com</a>, or run setup.command in the app\'s folder, then come back here.</div>';
+    } else if (!w.running) {
+      body += '<div class="knote">Ollama is installed but not running right now. Open the Movies page once and it starts by itself.</div>';
+    } else {
+      if (k.last && k.last.state === 'error') body += `<div class="err">${esc(plainError(k.last.error))}</div>`;
+      body += '<div class="knote">Ollama is running, but it has no writing model yet.</div>';
+      acts = `<button class="primary kbtn" data-pull="${esc(k.suggest.model)}">Download ${esc(k.suggest.model)} (${size(k.suggest.bytes)})</button>`;
+    }
+  } else if (k.kind === 'sounds') {
+    const have = music ? +music.sounds || 0 : k.have, want = music ? +music.sounds_wanted || k.wanted : k.wanted;
+    state = have >= want ? 'ready' : have ? 'partial' : 'missing';
+    if (soundsBusy && state !== 'ready') state = 'downloading';
+    body += `<div class="ksize">${have} of ${want} instruments are here</div>`;
+    if (music === null && state !== 'ready') body += '<div class="knote">Open this from the Storyboard app to download the rest.</div>';
+    else if (music && state === 'downloading') body += '<div class="knote">Downloading the instruments…</div>';
+    else if (music && state !== 'ready') acts = `<button class="primary kbtn" data-sounds="1">Download the sounds (about ${Math.max(3, Math.round((want - have) * 2.4))} MB)</button>`;
+    if (music) {
+      const tools = [];
+      if ('lilypond' in music) tools.push('LilyPond ' + (music.lilypond ? 'is here' : 'is missing'));
+      if ('claude' in music) tools.push('Claude Code ' + (!music.claude ? 'is missing' : music.claudeSignedIn === false ? 'is not signed in' : 'is here'));
+      if ('chrome' in music) tools.push('Chrome ' + (music.chrome ? 'is here' : 'is missing'));
+      if (tools.length) body += `<div class="knote dim">The Music section also needs: ${esc(tools.join(', '))}.</div>`;
+    }
+  }
+  return `<div class="kit ${state}" data-id="${k.id}"><div class="khead"><h4>${esc(k.title)}</h4><span class="badge ${KIT_BADGE[state]}">${KIT_WORD[state]}</span></div>` +
+    `<div class="kabout">${esc(k.about)}</div>${body}${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
+}
+function drawKits() {
+  if (!ST) return;
+  const box = $('kits');
+  if (box.children.length !== ST.kits.length || [...box.children].some((c, i) => c.dataset.id !== ST.kits[i].id)) {
+    box.innerHTML = ST.kits.map(k => `<div class="kit" data-id="${k.id}"></div>`).join('');
+    for (const k in kitHtml) delete kitHtml[k];
+  }
+  ST.kits.forEach((k, i) => {
+    const h = kitCard(k);
+    if (kitHtml[k.id] === h) return;
+    kitHtml[k.id] = h;
+    const tmp = document.createElement('div'); tmp.innerHTML = h;
+    box.replaceChild(tmp.firstChild, box.children[i]);
+  });
+}
+$('kits').addEventListener('toggle', e => {
+  const d = e.target.closest('details[data-kit]'); if (!d) return;
+  d.open ? openKits.add(d.dataset.kit) : openKits.delete(d.dataset.kit);
+  delete kitHtml[d.dataset.kit];
+}, true);
+$('kits').addEventListener('click', async e => {
+  const dl = e.target.closest('[data-kitdl]'), bake = e.target.closest('[data-bake]'), pull = e.target.closest('[data-pull]'), snd = e.target.closest('[data-sounds]');
+  try {
+    if (dl) { dl.disabled = true; await call(API + '/kit/download', {id: dl.dataset.kitdl}); toast('On it. You can leave this page: it keeps going.'); await poll(); }
+    if (bake) { bake.disabled = true; await call(API + '/bake', {}); toast('Lined up in the Storyboard queue. Fast video switches on when it is done.'); await poll(); }
+    if (pull) { pull.disabled = true; await call(API + '/writer/pull', {model: pull.dataset.pull}); toast('Ollama is downloading the writing model.'); await poll(); }
+    if (snd) {
+      snd.disabled = true;
+      const r = await fetch('/music/api/sounds/fetch', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Storyboard': '1'}, body: '{}'});
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Open this from the Storyboard app.');
+      soundsBusy = Date.now(); toast('Downloading the instrument sounds.'); loadMusic();
+    }
+  } catch (err) { toast(err.message); delete kitHtml[(e.target.closest('.kit') || {dataset: {}}).dataset.id]; drawKits(); }
+});
+// The Music section keeps its own count of instrument sounds. Outside the Storyboard app it is simply not there.
+let musicSeen = -1, musicSeenAt = 0, musicGone = false;
+async function loadMusic() {
+  if (musicGone) return;
+  try {
+    const r = await fetch('/music/api/status', {cache: 'no-store'});
+    if (r.status === 404) musicGone = true;   // this page is not being served by the Storyboard app: stop asking
+    if (!r.ok) throw new Error('none');
+    music = await r.json();
+    const n = +music.sounds || 0;
+    if (n !== musicSeen) { musicSeen = n; musicSeenAt = Date.now(); }
+    if (soundsBusy && (n >= (+music.sounds_wanted || 58) || Date.now() - Math.max(musicSeenAt, soundsBusy) > 45000)) soundsBusy = 0;
+  } catch (e) { music = null; soundsBusy = 0; }
+  drawKits();
+}
+
+// ---- slots ----
+let slotSig = '';
+function drawSlots() {
+  if (!ST) return;
+  slotLabels = Object.fromEntries(ST.slots.map(s => [s.name, s.label]));
+  const sig = JSON.stringify([ST.slots, ST.gguf_addon]);
+  if (sig === slotSig || $('slots').contains(document.activeElement)) return;
+  slotSig = sig;
+  $('slots').innerHTML = ST.slots.map(s => {
+    let opts = s.options.map(o => `<option value="${esc(o.file)}" ${o.file === s.value ? 'selected' : ''}>${esc(o.file)}${o.default ? '  (the usual one)' : ''}${o.link ? '  (from your downloads)' : ''}</option>`).join('');
+    if (!s.here) opts = `<option value="${esc(s.value)}" selected>${esc(s.value)}  (not here yet)</option>` + opts;
+    let note = '';
+    if (s.name === 'picture_reader') {
+      note = s.kind === 'gguf'
+        ? 'This is a GGUF reader. ' + (ST.gguf_addon ? '' : 'It needs the ComfyUI-GGUF add-on, which is not installed here. ') + 'It cannot look at character pictures, so pictures drawn from a character picture still use an official reader.'
+        : s.options.some(o => o.kind === 'gguf') ? 'A GGUF reader needs the ComfyUI-GGUF add-on' + (ST.gguf_addon ? '' : ' (not installed here)') + ' and cannot look at character pictures. Those always use an official reader.' : '';
+    }
+    return `<div class="slot"><div class="sname"><b>${esc(s.label)}</b><span class="dim">${esc(s.does)}</span></div>` +
+      `<select data-slot="${s.name}" ${s.options.length ? '' : 'disabled'} aria-label="${esc(s.label)}">${opts}</select>` +
+      (note ? `<div class="snote">${esc(note)}</div>` : '') + '</div>';
+  }).join('');
+}
+$('slots').addEventListener('change', async e => {
+  const sel = e.target.closest('[data-slot]'); if (!sel) return;
+  try {
+    const r = await call(API + '/slot', {name: sel.dataset.slot, file: sel.value});
+    toast(`${slotLabels[sel.dataset.slot] || 'That job'} now uses ${r.file}.`);
+  } catch (err) { toast(err.message); }
+  sel.blur(); slotSig = ''; await poll();
+});
+$('slotsReset').onclick = async () => {
+  try { await call(API + '/slots/reset', {}); toast('Back to the usual files.'); } catch (err) { toast(err.message); }
+  slotSig = ''; await poll();
+};
+
+// ---- the notepad: look a model up ----
+$('mem').value = String(mem);
+$('mem').onchange = () => { mem = +$('mem').value; store.set('mem', mem); if (repo) { choose(); drawRepo(false); narrate(); } };
+$('filter').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  filter = b.dataset.f;
+  [...$('filter').children].forEach(x => x.classList.toggle('on', x === b));
+};
+$('form').onsubmit = e => { e.preventDefault(); find($('q').value); };
+$('q').addEventListener('focus', () => window.penguin && window.penguin.mood('peek'));
+$('q').addEventListener('blur', () => window.penguin && window.penguin.mood('idle'));
+
+async function find(q) {
+  $('msg').textContent = ''; $('go').disabled = true;
+  say('Let me look that up…', 'think');
+  try {
+    const r = await call(API + '/resolve?q=' + encodeURIComponent(q) + '&format=' + filter);
+    if (r.type === 'repo') showRepo(r); else showSearch(r.results);
+  } catch (err) { $('msg').textContent = err.message; say('Hmm, that did not work. Is the link right?', 'sad'); }
+  $('go').disabled = false;
+}
+
+function showSearch(results) {
+  repo = null;
+  if (!results.length) { $('result').innerHTML = ''; say('I found nothing by that name. Try fewer words, or set “Show me” to Any.', 'sad'); return; }
+  $('result').innerHTML = results.map((m, n) => {
+    const ready = m.formats.includes('GGUF') ? 'ready for Ollama and llama.cpp' : m.formats.includes('MLX') ? 'for Apple Silicon Macs' : m.formats.includes('SAFETENSORS') ? 'original weights' : '';
+    return `<div class="slip res" style="animation-delay:${Math.min(n, 12) * 35}ms" data-repo="${esc(m.repo)}"><div class="name"><b>${esc(m.repo)}</b>` +
+      `<div class="kind">${esc([m.kind, ready].filter(Boolean).join(' · ') || 'Tap to see what it is')}</div></div>` +
+      m.formats.map(f => `<span class="tag ${f}">${LABEL[f]}</span>`).join('') + `<span class="size">${count(m.downloads)} downloads</span></div>`;
+  }).join('');
+  $('result').querySelectorAll('[data-repo]').forEach(el => el.onclick = () => { $('q').value = el.dataset.repo; find(el.dataset.repo); });
+  say(`I found ${results.length}. Tap one and I will explain what it is.`, 'happy');
+}
+
+function showRepo(r) {
+  repo = r;
+  fmt = r.available.includes(filter) ? filter : r.detected;
+  choose(); drawRepo(true); narrate();
+}
+const view = () => repo.views[fmt];
+const group = g => view().items.filter(i => i.group === g);
+const older = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) { const d = (a[i] || 0) - (b[i] || 0); if (d) return d < 0; } return false; };
+
+// Work out the badges and the starred pick, then tick the sensible defaults.
+function choose() {
+  const items = view().items, mains = group('choice').filter(i => i.role === 'main');
+  items.forEach(i => { i.badges = []; i.pick = i.old = false;
+    i.fit = !mem || !i.need ? '' : i.need <= mem * 0.8e9 ? 'fits' : i.need <= mem * 1e9 ? 'tight' : 'big'; });
+  if (mains.length) {
+    const newest = mains.map(i => i.version).filter(Boolean).reduce((a, b) => !a || older(a, b) ? b : a, null);
+    mains.forEach(i => { i.old = !!(newest && i.version && older(i.version, newest)); });
+    const pool = mains.filter(i => !i.old), fitting = pool.filter(i => i.fit !== 'big'), cand = fitting.length ? fitting : pool;
+    const desc = [...cand].sort((a, b) => b.size - a.size);
+    const best = desc.find(i => i.tier !== 32 && !i.pruned) || desc[0];
+    const balance = fmt === 'GGUF' ? (cand.find(i => i.quant === 'Q4_K_M') || desc.find(i => i.tier === 4))
+                                   : desc.find(i => i.tier === 8 && !i.pruned);
+    const smallest = [...pool].sort((a, b) => a.size - b.size)[0];
+    best.badges.push(['q', 'Best quality']);
+    if (balance && balance !== best) balance.badges.push(['b', 'Best balance']);
+    if (pool.length > 2 && smallest !== best && smallest !== balance) smallest.badges.push(['s', 'Smallest']);
+    let pick = balance || best;
+    if (mem) pick = fmt === 'GGUF' ? (desc.find(i => i.tier && i.tier <= 8) || best) : best;
+    view().nofit = !!mem && !fitting.length;
+    if (view().nofit) pick = smallest;          // nothing fits: point at the least-bad option
+    if (mains.length === 1) pick = mains[0];
+    pick.pick = true;
+  }
+  picked = new Set(items.filter(i => i.pick || i.group === 'required' || i.group === 'helper').map(i => i.label));
+}
+
+function narrate() {
+  const a = repo.about, v = view(), n = group('choice').filter(i => i.role === 'main').length;
+  const what = `This is ${/^[aeiou]/i.test(a.kind) ? 'an' : 'a'} ${a.kind.toLowerCase()}.`;
+  if (v.nofit) say(`${what} Heads up: every version is too big for a ${mem} GB computer. I starred the smallest, but it may not run there.`, 'sad');
+  else if (v.mode === 'choose' && n > 1) say(`${what} It comes in ${n} versions and you only need ONE. I starred the one I would take.`, 'happy');
+  else if (v.mode === 'choose') say(`${what} There is one file to grab, and I ticked it for you.`, 'happy');
+  else say(`${what} Its files all belong together, so I ticked everything you need.`, 'happy');
+}
+
+function pickCard(i, n, delay) {
+  const fit = {fits: 'Fits your computer', tight: 'A tight fit', big: 'Too big for it'}[i.fit];
+  const gb = i.need / 1e9;
+  return `<label class="slip pick ${picked.has(i.label) ? 'on' : ''} ${i.old ? 'muted' : ''}" style="animation-delay:${delay}ms">` +
+    `<input type="checkbox" data-n="${n}" ${picked.has(i.label) ? 'checked' : ''}>` +
+    `<div class="body"><div class="top"><span class="title">${esc(i.title)}</span>` +
+    (i.pick ? '<span class="badge star">★ My pick</span>' : '') +
+    i.badges.map(b => `<span class="badge ${b[0]}">${b[1]}</span>`).join('') +
+    (i.old ? '<span class="badge old">Older version</span>' : '') +
+    (fit ? `<span class="badge ${i.fit}">${fit}</span>` : '') + '</div>' +
+    (i.note ? `<div class="note">${esc(i.note)}</div>` : '') +
+    (i.need ? `<div class="need">Needs about ${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB of memory: ${hardware(gb)}.</div>` : '') +
+    `<div class="file mono">${esc(i.label)}${i.parts > 1 ? ` (${i.parts} parts)` : ''}</div></div>` +
+    `<div class="size">${size(i.size)}</div></label>`;
+}
+function fold(title, items, hint) {
+  if (!items.length) return '';
+  const all = view().items, total = items.reduce((a, i) => a + i.size, 0);
+  return `<details class="slip"><summary><b>${title}</b> <span class="dim">· ${items.length} file${items.length > 1 ? 's' : ''}, ${size(total)} · ${hint}</span></summary><div class="scroll">` +
+    items.map(i => `<label class="row"><input type="checkbox" data-n="${all.indexOf(i)}" ${picked.has(i.label) ? 'checked' : ''}><span class="name mono">${esc(i.label)}</span><span class="size">${size(i.size)}</span></label>`).join('') +
+    '</div></details>';
+}
+
+function drawRepo(animate) {
+  const a = repo.about, r = a.runs[fmt], v = view(), all = v.items;
+  const mains = group('choice').filter(i => i.role === 'main'), addons = group('choice').filter(i => i.role !== 'main');
+  const required = group('required');
+  const meta = [repo.license && 'licence: ' + repo.license, count(repo.downloads) + ' downloads'].filter(Boolean).join(' · ');
+  let h = `<div class="slip about"><div style="display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap"><div><h2>${esc(a.kind)}</h2><div class="repo mono dim">${esc(repo.repo)} · ${esc(meta)}</div></div>` +
+    `<div class="chips">${repo.available.map(f => `<button type="button" class="chip ${f === fmt ? 'on' : ''}" data-fmt="${f}">${LABEL[f]}</button>`).join('')}</div></div>` +
+    `<div style="margin-top:8px">${esc(a.blurb)}</div>` +
+    `<dl class="facts"><dt>Runs in</dt><dd>${esc(r.software)}</dd><dt>Computer</dt><dd>${esc(r.computer)}</dd><dt>Saved to</dt><dd class="mono">${fmt}/${esc(repo.repo)}</dd></dl>` +
+    (r.warn ? `<div class="callout">${esc(r.warn)}</div>` : '') +
+    (a.family === 'media' ? '<div class="callout">Downloading a model here does not teach the movie maker how to use it. The movie maker drives the models in the kits at the top. A file of the same family can be swapped in under “Which file each job uses”.</div>' : '') +
+    (repo.gated === 'ok' ? `<div class="dim" style="margin-top:8px;font-size:13.5px">This model asks you to accept its terms. Your Hugging Face account already has access, so you are good to go.</div>` :
+     repo.gated === 'login' ? `<div class="callout">This model is locked. <a href="https://huggingface.co/${esc(repo.repo)}" target="_blank" rel="noopener">Accept its terms on Hugging Face</a>, then log this computer in to your Hugging Face account (in Terminal: <span class="mono">hf auth login</span>), or the download will be refused.</div>` :
+     repo.gated ? `<div class="callout">This model is locked. <a href="https://huggingface.co/${esc(repo.repo)}" target="_blank" rel="noopener">Accept its terms on Hugging Face</a> first, or the download will be refused. Then press Find again.</div>` : '') +
+    `<div style="margin-top:8px;font-size:13.5px"><a href="https://huggingface.co/${esc(repo.repo)}" target="_blank" rel="noopener">Read the maker's own page</a></div></div>`;
+  if (mains.length) {
+    h += `<div class="section">${mains.length > 1 ? 'Pick one version' : 'The model'} <small>${mains.length > 1 ? 'They are the same model at different sizes. One is enough.' : ''}</small></div>`;
+    h += mains.map((i, k) => pickCard(i, all.indexOf(i), 90 + Math.min(k, 10) * 45)).join('');
+  }
+  if (required.length) {
+    const gb = v.need / 1e9, fit = !mem ? '' : v.need <= mem * 0.8e9 ? 'fits' : v.need <= mem * 1e9 ? 'tight' : 'big';
+    h += `<div class="section">The model <small>Its pieces go together, so take them all.</small></div>` +
+      `<div class="slip about" style="animation-delay:90ms"><div class="pick" style="padding:0;cursor:default"><div class="body"><div class="top"><span class="title">Complete model</span>` +
+      (fit ? `<span class="badge ${fit}">${{fits: 'Fits your computer', tight: 'A tight fit', big: 'Too big for it'}[fit]}</span>` : '') +
+      `</div><div class="need">Needs about ${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB of memory: ${hardware(gb)}.</div></div>` +
+      `<div class="size">${size(required.reduce((s, i) => s + i.size, 0))}</div></div></div>` + fold('Model files', required, 'all needed');
+  }
+  if (addons.length) {
+    h += '<div class="section">Add-ons and helpers <small>Only if you know you need them.</small></div>' + addons.map((i, k) => pickCard(i, all.indexOf(i), 200 + k * 45)).join('');
+  }
+  h += fold('Small set-up files', group('helper'), 'tiny, included for you');
+  h += fold('Extras you can skip', group('extra'), 'sample videos, pictures and spare copies');
+  h += '<div class="foot"><div id="sel"></div><button type="button" class="primary" id="dl">Download</button></div>';
+  $('result').innerHTML = h;
+  if (!animate) $('result').querySelectorAll('.slip').forEach(el => el.style.animation = 'none');
+  $('result').querySelectorAll('[data-fmt]').forEach(b => b.onclick = () => { fmt = b.dataset.fmt; choose(); drawRepo(true); narrate(); });
+  $('result').querySelectorAll('[data-n]').forEach(c => c.onchange = () => {
+    const i = all[+c.dataset.n]; c.checked ? picked.add(i.label) : picked.delete(i.label);
+    const card = c.closest('.pick'); if (card) card.classList.toggle('on', c.checked);
+    drawSel();
+  });
+  $('dl').onclick = download;
+  drawSel();
+}
+function drawSel() {
+  const items = view().items.filter(i => picked.has(i.label));
+  const total = items.reduce((a, i) => a + i.size, 0), files = items.reduce((a, i) => a + i.files.length, 0);
+  const many = group('choice').filter(i => i.role === 'main' && picked.has(i.label)).length;
+  const tight = total > freeBytes;
+  $('sel').innerHTML = !files ? '<span class="dim">Nothing ticked yet</span>'
+    : `<b>${size(total)}</b> <span class="dim">in ${files} file${files > 1 ? 's' : ''}</span>` +
+      (tight ? ' <span class="err">· more than the drive has free</span>' : many > 1 ? ` <span class="dim">· ${many} versions ticked, one is usually enough</span>` : '');
+  $('dl').textContent = files ? 'Download ' + size(total) : 'Download';
+  $('dl').disabled = !files || tight;
+}
+async function download() {
+  const files = view().items.filter(i => picked.has(i.label)).flatMap(i => i.files);
+  $('msg').textContent = '';
+  try {
+    await call(API + '/download', {repo: repo.repo, format: fmt, files});
+    say(`On it! I am saving it in the ${fmt} folder. You can leave me to it.`, 'happy');
+    poll(); window.scrollTo({top: $('jobs').offsetTop - 80, behavior: 'smooth'});
+  } catch (err) { $('msg').textContent = err.message; say('I could not start that one. The note under the box says why.', 'sad'); }
+}
+
+// ---- downloads ----
+let hiddenJobs = new Set((store.get('hiddenJobs') || '').split(',').filter(Boolean));
+function drawJobs(jobs) {
+  // A stopped download disappears once the same thing is downloading again, or when you remove it.
+  jobs = jobs.filter((j, i) => !hiddenJobs.has(j.id) &&
+    !((j.state === 'error' || j.state === 'cancelled') && jobs.slice(i + 1).some(n => n.kind === j.kind && n.dest === j.dest && n.repo === j.repo)));
+  if (!jobs.length) { $('jobs').innerHTML = '<div class="empty">Nothing downloading.</div>'; return; }
+  const word = {queued: 'Waiting its turn', running: 'Downloading', done: 'Done', error: 'Failed', cancelled: 'Stopped'};
+  $('jobs').innerHTML = jobs.slice().reverse().map(j => {
+    const pct = j.total ? Math.min(100, j.done / j.total * 100) : 0;
+    const live = j.state === 'running' || j.state === 'queued';
+    let meta = j.total > 1 ? `${word[j.state]} · ${size(j.done)} of ${size(j.total)} (${pct.toFixed(pct < 10 ? 1 : 0)}%)` : word[j.state];
+    if (j.state === 'running' && j.total > 1 && j.done >= j.total) meta = 'Finishing up, writing to the drive…';
+    else if (j.state === 'running' && j.speed > 0) meta += ` · ${size(j.speed)}/s · ${eta((j.total - j.done) / j.speed)}`;
+    const head = j.kind === 'kit' ? `<span class="tag KIT">Kit</span> <b>${esc(j.title)}</b>`
+      : `<span class="tag ${j.format}">${LABEL[j.format] || esc(j.format)}</span> <span class="mono">${esc(j.repo)}</span>`;
+    return `<div class="job"><div class="job-top"><div>${head}</div>` +
+      `<div style="display:flex;gap:8px">${live ? `<button class="small" data-cancel="${j.id}">Cancel</button>` : ''}` +
+      (j.kind === 'free' ? `<button class="small" data-open="${esc(j.dest)}">Show in Finder</button>` : '') +
+      (live ? '' : `<button class="small" data-hide="${j.id}" title="Take this off the list. The files stay where they are.">Remove</button>`) + '</div></div>' +
+      `<div class="progress"><i style="width:${pct}%;${j.state === 'done' ? 'background:var(--good)' : j.state === 'error' ? 'background:var(--bad)' : ''}"></i></div>` +
+      `<div class="job-meta">${esc(meta)}</div>` + (j.error ? `<div class="err">${esc(plainError(j.error))}</div>` : '') +
+      (j.state === 'cancelled' || j.state === 'error' ? '<div class="job-meta">Downloading the same thing again picks up where this stopped.</div>' : '') + '</div>';
+  }).join('');
+}
+document.addEventListener('click', async e => {
+  const c = e.target.closest('[data-cancel]'), o = e.target.closest('[data-open]');
+  const h = e.target.closest('[data-hide]'), u = e.target.closest('[data-use]');
+  if (o && o.closest('summary')) e.preventDefault();   // do not fold the row open or shut as well
+  if (h) { hiddenJobs.add(h.dataset.hide); store.set('hiddenJobs', [...hiddenJobs].slice(-200).join(',')); poll(); return; }
+  try {
+    if (c) { c.disabled = true; await call(API + '/cancel', {id: c.dataset.cancel}); poll(); }
+    if (o) await call(API + '/reveal', {path: o.dataset.open});
+    if (u) await useFile(u);
+  } catch (err) { toast(err.message); }
+});
+
+// ---- what is on the drive ----
+let libModels = [];
+const openLib = new Set();
+async function loadLibrary() {
+  try {
+    libModels = (await call(API + '/library')).models;
+    if (!libModels.length) { $('library').innerHTML = '<div class="empty">No models here yet. They get sorted into GGUF, MLX and SAFETENSORS folders.</div>'; return; }
+    $('library').innerHTML = libModels.map((m, i) => {
+      const rows = m.weights.map((w, k) => `<div class="wrow"><span class="name mono">${esc(w.name)}</span><span class="size">${size(w.size)}</span>` +
+        (w.slots.length ? `<select id="use${i}_${k}" aria-label="Use it as">${w.slots.map(sn => `<option value="${sn}">as the ${esc((slotLabels[sn] || sn).toLowerCase())}</option>`).join('')}</select>` +
+            `<button class="small" data-use="${i}:${k}">Use in the movie maker</button>`
+          : `<span class="dim" style="font-size:12.5px">${w.parts ? 'comes in parts, so the movie maker cannot use it as it is' : 'not a file the movie maker uses'}</span>`) + '</div>').join('');
+      return `<details class="libd" data-lib="${esc(m.path)}" ${openLib.has(m.path) ? 'open' : ''}><summary><span class="tag ${m.format}">${LABEL[m.format]}</span><span class="name mono">${esc(m.repo)}</span>` +
+        `<span class="dim" style="font-size:13px;white-space:nowrap">${size(m.size)}</span><button class="small" data-open="${esc(m.path)}">Show in Finder</button></summary>` +
+        (rows || '<div class="wrow dim">No model files in here.</div>') + '</details>';
+    }).join('');
+  } catch (err) { $('library').innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; }
+}
+$('library').addEventListener('toggle', e => {
+  const d = e.target.closest('details[data-lib]'); if (!d) return;
+  d.open ? openLib.add(d.dataset.lib) : openLib.delete(d.dataset.lib);
+}, true);
+async function useFile(btn) {
+  const [i, k] = btn.dataset.use.split(':').map(Number), w = libModels[i].weights[k], slot = $(`use${i}_${k}`).value;
+  const label = (slotLabels[slot] || slot).toLowerCase();
+  if (!confirm(`Use ${w.name.split('/').pop()} as the ${label}?\n\nThis only works if it is the same model family as the usual file. If pictures or videos start failing, switch back under “Which file each job uses”.\n\nNothing is copied: the engine gets a link to this file.`)) return;
+  const r = await call(API + '/use', {path: w.path, slot});
+  toast(`Done. The ${r.label.toLowerCase()} is now ${r.file}.`);
+  slotSig = ''; await poll();
+}
+
+// ---- where to save ----
+let places = null;
+async function openPlaces() {
+  $('placeMsg').textContent = '';
+  try { places = await call(API + '/locations'); } catch (err) { toast(err.message); return; }
+  $('howto').textContent = places.system === 'Darwin'
+    ? 'To format on a Mac: copy off anything you want to keep, open Disk Utility, select the drive, press Erase and choose ExFAT. Erasing deletes everything on the drive. This app never formats a drive for you.'
+    : places.system === 'Windows'
+      ? 'To format on Windows: copy off anything you want to keep, right-click the drive in File Explorer, choose Format, set File system to exFAT and press Start.'
+      : 'To format on Linux: copy off anything you want to keep, open the Disks app, select the drive, choose Format Partition and pick exFAT.';
+  $('placeList').innerHTML = places.options.map((o, n) => {
+    const on = o.path === places.current, used = o.total ? (1 - o.free / o.total) * 100 : 0;
+    return `<div class="place ${on ? 'on' : ''}"><div class="top"><b>${esc(o.name)}</b>` +
+      (o.format ? `<span class="badge ${o.level === 'good' ? 'fits' : o.level === 'warn' ? 'tight' : 'big'}">${esc(o.format)}</span>` : '') +
+      (on ? '<span class="badge star">Saving here</span>' : '') + `<span class="sp"></span><span class="dim" style="font-size:13px">${size(o.free)} free of ${size(o.total)}</span></div>` +
+      `<div class="mono dim" style="word-break:break-all">${esc(o.path)}</div><div class="meter"><i style="width:${used}%"></i></div>` +
+      `<div class="advice ${o.level}">${esc(o.advice)}${o.level === 'bad' ? ' How to do that is under “How it should be formatted” below.' : ''}</div><div class="acts">` +
+      (o.level !== 'bad' && !on ? `<button type="button" class="small" data-use-place="${n}">Save here</button>` : '') + '</div></div>';
+  }).join('');
+  if (!$('places').open) $('places').showModal();
+}
+async function usePlace(path) {
+  try {
+    await call(API + '/location', {path});
+    $('places').close(); lastStates = ''; await poll(); loadLibrary();
+    say('Got it. I will keep the downloads in ' + path.split(/[\\/]/).slice(-2).join('/') + '.', 'happy');
+  } catch (err) { $('placeMsg').textContent = err.message; }
+}
+$('where').onclick = openPlaces;
+$('placesClose').onclick = () => $('places').close();
+$('customForm').onsubmit = e => { e.preventDefault(); if ($('custom').value.trim()) usePlace($('custom').value.trim()); };
+$('placeList').onclick = e => { const u = e.target.closest('[data-use-place]'); if (u) usePlace(places.options[+u.dataset.usePlace].path); };
+
+async function poll() {
+  try {
+    const s = ST = await call(API + '/status');
+    freeBytes = s.free;
+    $('dot').classList.toggle('ok', s.drive);
+    $('drive').textContent = s.drive ? `Saving to ${shortPath(s.path)} · ${size(s.free)} free` : 'The drive is not connected';
+    $('where').title = 'Choose where these downloads are saved. Now: ' + s.path;
+    drawKits(); drawSlots(); drawJobs(s.jobs);
+    s.jobs.forEach(j => {
+      const was = jobStates[j.id];
+      if (was && was !== j.state) {
+        const what = j.kind === 'kit' ? j.title : j.repo.split('/').pop();
+        if (j.state === 'done') { say(`All done! ${what} is ready.`, 'happy'); toast(`${what} is ready.`); }
+        if (j.state === 'error') { say('Oh no, that download failed. The reason is in the Downloads box.', 'sad'); toast(`The download of ${what} failed. The reason is in the Downloads box.`); }
+      }
+      jobStates[j.id] = j.state;
+    });
+    if (window.penguin) window.penguin.busy(s.jobs.some(j => j.state === 'running'));
+    const states = s.jobs.map(j => j.id + j.state).join() + '|' + s.path + '|' + JSON.stringify(s.slots.map(x => x.value));
+    if (states !== lastStates) { lastStates = states; loadLibrary(); }
+    if (repo && $('dl')) drawSel();
+  } catch (err) {
+    $('dot').classList.remove('ok');
+    $('drive').textContent = 'The app is not answering. Start it again with “Start Storyboard”.';
+  }
+}
+poll(); loadMusic(); setInterval(poll, 1500); setInterval(loadMusic, 5000);
+setInterval(() => { if (soundsBusy) loadMusic(); }, 2000);   // follow the instrument download more closely while it runs
+</script>
+
+<script type="module">
+// The penguin. He is decoration: if 3D is unavailable the notepad works without him.
+import * as THREE from '/models/vendor/three.module.min.js';
+try {
+  const canvas = document.getElementById('pg');
+  const renderer = new THREE.WebGLRenderer({canvas, alpha: true, antialias: true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setSize(340, 300, false);
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(30, 340 / 300, 0.1, 50);
+  cam.position.set(0, 0.5, 7.4); cam.lookAt(0, 0.12, 0);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xffe2a0, 1.5));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.9); sun.position.set(2.5, 4, 5); scene.add(sun);
+  const rim = new THREE.DirectionalLight(0xffd21e, 1.2); rim.position.set(-4, 1.5, -3); scene.add(rim);
+
+  const mat = (color, rough = 0.5) => new THREE.MeshStandardMaterial({color, roughness: rough});
+  const ball = (r, color, rough) => new THREE.Mesh(new THREE.SphereGeometry(r, 40, 28), mat(color, rough));
+  const NAVY = 0x27345a, ORANGE = 0xff9d00;
+  const p = new THREE.Group(); scene.add(p);
+  const squish = new THREE.Group(); p.add(squish);
+
+  const body = ball(1, NAVY, 0.42); body.scale.set(1, 1.1, 0.95); squish.add(body);
+  const belly = ball(0.8, 0xfffaf0, 0.6); belly.scale.set(0.84, 0.92, 0.55); belly.position.set(0, -0.14, 0.5); squish.add(belly);
+  const eyes = [], pupils = [];
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Group(); eye.position.set(sx * 0.31, 0.44, 0.79);
+    const white = ball(0.17, 0xffffff, 0.25); white.scale.z = 0.6; eye.add(white);
+    const pupil = ball(0.092, 0x151a2c, 0.2); pupil.scale.z = 0.6; pupil.position.z = 0.075; eye.add(pupil);
+    const glint = ball(0.03, 0xffffff, 0.1); glint.position.set(0.03, 0.035, 0.06); pupil.add(glint);
+    squish.add(eye); eyes.push(eye); pupils.push(pupil);
+    const cheek = ball(0.11, 0xff9fb2, 0.8); cheek.scale.z = 0.3; cheek.position.set(sx * 0.55, 0.2, 0.74); squish.add(cheek);
+    const foot = ball(1, ORANGE, 0.5); foot.scale.set(0.3, 0.12, 0.42); foot.position.set(sx * 0.4, -1.08, 0.32); squish.add(foot);
+  }
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.3, 24), mat(ORANGE, 0.4));
+  beak.rotation.x = Math.PI / 2; beak.scale.y = 1; beak.scale.z = 0.7; beak.position.set(0, 0.24, 0.98); squish.add(beak);
+  const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.955, 0.1, 14, 48), mat(0xffd21e, 0.7));
+  scarf.rotation.x = Math.PI / 2; scarf.scale.set(1, 0.95, 1); scarf.position.y = -0.06; squish.add(scarf);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.46, 0.07), mat(0xffd21e, 0.7));
+  tail.position.set(0.5, -0.3, 0.85); tail.rotation.set(0.1, -0.5, -0.18); squish.add(tail);
+  const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.28, 12), mat(NAVY, 0.42));
+  tuft.position.set(0.05, 1.16, 0); tuft.rotation.z = -0.35; squish.add(tuft);
+  const flippers = [];
+  for (const sx of [-1, 1]) {
+    const pivot = new THREE.Group(); pivot.position.set(sx * 0.9, 0.2, 0.05);
+    const f = ball(1, NAVY, 0.42); f.scale.set(0.15, 0.5, 0.3); f.position.y = -0.42; pivot.add(f);
+    squish.add(pivot); flippers.push([pivot, sx]);
+  }
+
+  let mood = 'idle', moodT = 0, t = 0, busy = false;
+  let y = 0, vy = 0, sq = 0, sqv = 0, nextHop = 3, nextBlink = 2, blink = 0, shake = 0, spin = 0;
+  const mouse = {x: 0, y: 0}, look = {x: 0, y: 0};
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hop = v => { if (y <= 0.001 && !calm) vy = v; };
+  addEventListener('mousemove', e => {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / (innerWidth / 2)));
+    mouse.y = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height / 2)) / (innerHeight / 2)));
+  });
+  const quips = ['Boing!', 'That tickles.', 'I am part penguin, part bouncy ball.', 'Got a link for me?', 'I like the big models best. More to carry.'];
+  canvas.addEventListener('click', () => { hop(4.2); const b = document.getElementById('say'); b.textContent = quips[Math.floor(Math.random() * quips.length)]; b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); });
+
+  window.penguin = {
+    mood(m) { mood = m; moodT = 0; if (m === 'happy') { hop(4); spin = 1; } if (m === 'sad') shake = 1; },
+    busy(b) { busy = b; },
+  };
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt; moodT += dt;
+    if ((mood === 'happy' && moodT > 1.8) || (mood === 'sad' && moodT > 1.2)) { mood = 'idle'; moodT = 0; }
+
+    // hop physics with a squash on landing
+    vy -= 15 * dt; y += vy * dt;
+    if (y < 0) { if (vy < -0.8) sqv = vy * 0.5; y = 0; vy = 0; }
+    sqv += (-170 * sq - 13 * sqv) * dt; sq += sqv * dt;
+    if (mood === 'idle' && !busy && t > nextHop) { hop(2.4 + Math.random() * 1.6); nextHop = t + 3.5 + Math.random() * 5; }
+    if (mood === 'think') hop(1.9);
+    if (mood === 'happy' && moodT < 1.3) hop(3.6);
+    if (busy && mood === 'idle') hop(1.5);
+
+    const breathe = Math.sin(t * 2.2) * 0.018, stretch = Math.max(-0.12, Math.min(0.14, vy * 0.028));
+    const sy = 1 + sq + breathe + stretch;
+    squish.scale.set(1 - (sy - 1) * 0.6, sy, 1 - (sy - 1) * 0.6);
+    squish.position.y = (sy - 1) * 1.1;          // keep the feet planted while squashing
+    p.position.y = -0.05 + y;
+
+    // where he looks
+    let tx = mouse.x * 0.55, ty = -mouse.y * 0.3, eyeY = -mouse.y * 0.6;
+    if (mood === 'peek' || busy) { tx = mouse.x * 0.15; ty = -0.38; eyeY = -0.9; }
+    if (mood === 'think') { tx = Math.sin(t * 5) * 0.4; ty = 0.18; eyeY = 0.9; }
+    look.x += (tx - look.x) * Math.min(1, dt * 6); look.y += (ty - look.y) * Math.min(1, dt * 6);
+    shake *= Math.pow(0.04, dt); spin = Math.max(0, spin - dt / 0.9);
+    const ease = 1 - Math.pow(spin, 3);
+    p.rotation.y = look.x + Math.sin(moodT * 24) * 0.35 * shake + (spin > 0 ? ease * Math.PI * 2 : 0);
+    p.rotation.x = -look.y;
+    p.rotation.z = Math.sin(t * 1.3) * 0.045;
+    for (const pupil of pupils) { pupil.position.x += (mouse.x * 0.05 - pupil.position.x) * 0.2; pupil.position.y += (eyeY * 0.045 - pupil.position.y) * 0.2; }
+
+    // blink
+    if (t > nextBlink) { blink = 1; nextBlink = t + 1.8 + Math.random() * 3.5; }
+    blink = Math.max(0, blink - dt * 7);
+    const lid = mood === 'happy' ? 0.45 : 1 - Math.sin(Math.min(1, blink) * Math.PI) * 0.92;
+    for (const eye of eyes) eye.scale.y = lid;
+
+    // flippers
+    const flap = mood === 'happy' ? Math.sin(t * 22) * 0.55 + 0.9 : mood === 'think' ? Math.sin(t * 10) * 0.2 + 0.35
+      : busy ? Math.sin(t * 9) * 0.22 + 0.3 : Math.sin(t * 2.2) * 0.06 + 0.22 + Math.max(0, vy) * 0.18;
+    for (const [pivot, sx] of flippers) pivot.rotation.z = sx * flap;
+    tail.rotation.z = -0.18 + Math.sin(t * 3) * 0.06 + vy * 0.05;
+
+    renderer.render(scene, cam);
+    if (!calm || moodT < 0.1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  if (calm) setInterval(() => requestAnimationFrame(frame), 1000);
+} catch (err) {
+  document.getElementById('pg').style.display = 'none';
+  console.log('[penguin] 3D unavailable:', err.message);
+}
+</script>
+</body>
+</html>

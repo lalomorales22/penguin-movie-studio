@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Penguin's Storyboard</title>
+<style>
+  :root {
+    --yellow: #ffd21e; --orange: #ff9d00; --ink: #1f2937; --dim: #6b7280; --line: #e5e7eb;
+    --sky: #fff4c2; --paper: #fffdf3; --navy: #232f4f; --card: #ffffff;
+    --good: #0e9f6e; --bad: #e02424; --warn: #c27803;
+    --hand: "Chalkboard SE", "Marker Felt", "Comic Sans MS", ui-rounded, sans-serif;
+    --round: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); font: 15px/1.5 var(--round); min-height: 100vh;
+    background: radial-gradient(1200px 520px at 50% -80px, #ffe98a 0%, var(--sky) 45%, #fffaf0 100%) no-repeat, #fffaf0; }
+  a { color: #b45309; }
+  .dim { color: var(--dim); }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 16px 16px 0; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; }
+  h1 { font: 700 22px/1 var(--round); margin: 0; display: flex; align-items: center; gap: 9px; cursor: pointer; }
+  h1 i { width: 26px; height: 26px; border-radius: 50%; background: var(--yellow); border: 2px solid var(--orange); display: inline-block; }
+
+  button { font: 600 14px var(--round); border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 9px; padding: 8px 13px; cursor: pointer; }
+  button:hover { border-color: #c4c9d2; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--yellow); border-color: var(--orange); box-shadow: 0 3px 0 var(--orange); transition: transform .08s, box-shadow .08s; }
+  button.primary:active:not(:disabled) { transform: translateY(3px); box-shadow: none; }
+  button.big { font-size: 17px; padding: 12px 22px; border-radius: 12px; }
+  button.small { padding: 4px 10px; font-size: 13px; font-weight: 500; }
+  button.ghost { border-color: transparent; background: transparent; color: var(--dim); padding: 4px 8px; }
+  button.ghost:hover { color: var(--ink); background: #fff; border-color: var(--line); }
+  button.danger:hover { color: var(--bad); border-color: #f8b4b4; }
+  input[type=text], textarea, select, input[type=time] { font: 15px/1.45 var(--round); color: var(--ink); background: #fff; border: 1px solid var(--line);
+    border-radius: 9px; padding: 8px 10px; outline: none; }
+  input[type=text]:focus, textarea:focus, select:focus, input[type=time]:focus { border-color: var(--orange); box-shadow: 0 0 0 2px #ffe08a; }
+  textarea { width: 100%; resize: vertical; display: block; }
+  select, input[type=time] { padding: 5px 8px; font-size: 14px; max-width: 100%; }
+  #imodel, #pmodel { max-width: 260px; }
+  label.lbl { display: block; font-size: 12.5px; color: var(--dim); margin: 0 0 3px 2px; }
+
+  .appnav { display: inline-flex; background: #fff; border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; box-shadow: 3px 3px 0 rgba(31,41,55,.12); }
+  .appnav a { padding: 7px 15px; font: 600 14px var(--round); color: var(--ink); text-decoration: none; }
+  .appnav a + a { border-left: 1px solid var(--line); }
+  .appnav a.on { background: var(--yellow); }
+  .appnav a:hover:not(.on) { background: #fff7d6; }
+  .mode { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+  .seg { display: inline-flex; background: #fff; border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; box-shadow: 3px 3px 0 rgba(31,41,55,.12); }
+  .seg button { border: 0; border-radius: 0; padding: 8px 14px; background: transparent; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--ink); color: #fff; }
+  .seg button.on.night { background: var(--navy); }
+  .hours { display: none; align-items: center; gap: 6px; font-size: 14px; }
+  .hours.show { display: inline-flex; }
+  .bubble { margin-top: 12px; background: #fff; border: 2px solid var(--ink); border-radius: 16px; padding: 10px 14px; font: 15.5px/1.4 var(--hand);
+    box-shadow: 4px 4px 0 rgba(31,41,55,.12); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .bubble .pill { font: 600 12px var(--round); border-radius: 999px; padding: 2px 9px; background: #f3f4f6; color: #374151; white-space: nowrap; }
+  .bubble .pill.ok { background: #def7ec; color: #03543f; } .bubble .pill.moon { background: #e0e7ff; color: #3730a3; }
+  .bubble #say { flex: 1 1 300px; }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; max-width: 1320px; margin: 16px auto 0; padding: 0 16px 80px; }
+  @media (max-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  aside { position: sticky; top: 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
+  @media (max-width: 1000px) { aside { position: static; max-height: none; } }
+  aside h3 { margin: 0; padding: 12px 14px; font: 700 17px var(--hand); border-bottom: 1px solid #f1f2f4; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  aside h3 small { font: 400 12.5px var(--round); color: var(--dim); }
+  #jobs { overflow: auto; }
+  .job { padding: 10px 14px; border-top: 1px solid #f1f2f4; font-size: 13.5px; }
+  .job:first-child { border-top: 0; }
+  .job .name { font-weight: 600; cursor: pointer; }
+  .job .meta { color: var(--dim); font-size: 12.5px; margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .job.failed .meta { color: var(--bad); } .job.done .name, .job.cancelled .name { font-weight: 500; color: var(--dim); }
+  .job .acts { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+  .progress { height: 9px; background: #f3f4f6; border-radius: 999px; overflow: hidden; margin-top: 6px; }
+  .progress i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--yellow), var(--orange)); transition: width 1.5s linear; }
+  .empty { padding: 16px 14px; color: var(--dim); font-size: 14px; }
+  aside footer { padding: 8px 14px; border-top: 1px solid #f1f2f4; display: flex; justify-content: flex-end; }
+
+  /* idea box */
+  .idea { background: var(--paper); border: 2px solid var(--ink); border-radius: 18px; padding: 18px 20px 20px; box-shadow: 5px 5px 0 rgba(31,41,55,.12); }
+  .idea h2 { font: 700 22px var(--hand); margin: 0 0 2px; }
+  .idea p.sub { margin: 0 0 12px; color: var(--dim); }
+  .idea textarea { font-size: 17px; font-family: var(--hand); }
+  .line { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; font-size: 15px; }
+  .sum { margin-top: 10px; font-size: 14px; background: #fff7e0; border: 1px solid #f5d98a; border-radius: 9px; padding: 7px 11px; }
+  .idea .go { margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  h3.sec { font: 700 17px var(--hand); margin: 26px 0 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-top: 12px; }
+  .pcard { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; cursor: pointer; transition: transform .1s, box-shadow .1s; }
+  .pcard:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -14px rgba(120,80,0,.5); border-color: var(--orange); }
+  .pcard .thumb { aspect-ratio: 16/10; background: #f6f1dc center/cover no-repeat; display: grid; place-items: center; color: #b8ad80; font: 15px var(--hand); }
+  .pcard .body { padding: 10px 12px 12px; }
+  .pcard b { font-size: 15.5px; display: block; overflow-wrap: anywhere; }
+  .pcard.new { border: 2px dashed #d9c98a; background: transparent; display: grid; place-items: center; min-height: 190px; font: 700 17px var(--hand); color: #9a7b1d; }
+  .tag { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #fff3c4; color: #7a5200; white-space: nowrap; }
+
+  /* project */
+  .back { display: inline-block; margin-bottom: 8px; font-size: 14px; cursor: pointer; }
+  .banner { border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; font: 16px var(--hand); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .banner.busy { background: #e0e7ff; border: 1px solid #c7d2fe; color: #312e81; }
+  .banner.err { background: #fde8e8; border: 1px solid #f8b4b4; color: #9b1c1c; }
+  .banner.todo { background: #fff3c4; border: 1px solid #f5d98a; color: #7a5200; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 3px solid #c7d2fe; border-top-color: #4338ca; animation: spin 1s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .final { background: #111827; border-radius: 14px; padding: 12px; margin-bottom: 12px; color: #fff; }
+  .final video { width: 100%; max-height: 62vh; border-radius: 8px; background: #000; display: block; }
+  .final .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; font: 700 17px var(--hand); flex-wrap: wrap; }
+  .phead { background: var(--paper); border: 1px solid #e8dfb8; border-radius: 14px; padding: 14px 16px; }
+  .phead .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .phead #pname { flex: 1 1 260px; font: 700 20px var(--hand); min-width: 0; }
+  .begin { margin-top: 14px; display: flex; gap: 12px 16px; align-items: center; flex-wrap: wrap; }
+  .begin .what { font-size: 14px; flex: 1 1 240px; }
+  .phead .actions { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .phead .field { margin-top: 12px; }
+  .cast .crow { display: grid; grid-template-columns: minmax(90px, 160px) minmax(0, 1fr) auto; gap: 6px; margin-bottom: 6px; }
+  .cast input[type=text] { width: 100%; }
+  .cast.pics .crow { grid-template-columns: 76px minmax(90px, 160px) minmax(0, 1fr) auto; gap: 6px 8px; margin-bottom: 12px; align-items: start; }
+  .cpic { grid-row: span 2; width: 76px; height: 76px; border-radius: 10px; background: #f6f1dc; border: 1px solid #e8dfb8; display: grid; place-items: center; color: #b0a577; font: 12.5px var(--hand); text-align: center; overflow: hidden; }
+  .cpic img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; display: block; }
+  .cacts { grid-column: 2 / -1; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12.5px; }
+  .cacts .ver { display: inline-flex; align-items: center; gap: 2px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .cacts .ver button { padding: 1px 7px; }
+  .cacts .bad { color: var(--bad); }
+  .chk { display: flex; gap: 7px; align-items: center; font-size: 13.5px; margin: 2px 0 10px; cursor: pointer; }
+  .phead .extra { margin-top: 10px; font-size: 13.5px; display: flex; gap: 6px 18px; flex-wrap: wrap; align-items: center; }
+  .musicbox { border-top: 1px dashed #e8dfb8; padding-top: 12px; }
+  .musicbox .mname { font: 16px var(--hand); margin-bottom: 4px; }
+  .musicbox audio { width: 100%; max-width: 520px; height: 36px; display: block; }
+  .musicbox .mrow { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; margin: 8px 0 6px; }
+  .musicbox #mnote { width: 100%; }
+  .musicbox .bad { color: var(--bad); }
+  .musicbox details { margin-top: 6px; font-size: 12.5px; color: var(--dim); }
+  .musicbox details summary { cursor: pointer; }
+  .musicbox details pre { white-space: pre-wrap; font: 12px/1.5 ui-monospace, Menlo, monospace; background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; margin: 6px 0 0; color: var(--ink); max-height: 260px; overflow: auto; }
+  a.btnlink { font: 500 13px var(--round); border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 9px; padding: 4px 10px; text-decoration: none; display: inline-block; }
+  a.btnlink:hover { border-color: #c4c9d2; }
+  .shot { background: #fff; border: 1px solid var(--line); border-radius: 14px; margin-top: 12px; padding: 12px; display: grid;
+    grid-template-columns: 34px minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; }
+  @media (max-width: 760px) { .shot { grid-template-columns: 30px minmax(0, 1fr); } .shot .words { grid-column: 1 / -1; } }
+  .shot .num { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .shot .num b { font: 700 20px var(--hand); width: 32px; height: 32px; border-radius: 50%; background: var(--yellow); border: 2px solid var(--orange); display: grid; place-items: center; margin-bottom: 4px; }
+  .shot .num button { padding: 2px 7px; font-size: 13px; line-height: 1.2; }
+  .frames { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; }
+  .frame { position: relative; aspect-ratio: var(--ar, 16/9); background: #f6f1dc; border-radius: 10px; overflow: hidden; display: grid; place-items: center; color: #b0a577; font: 14px var(--hand); text-align: center; }
+  .frame img, .frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+  .frame img { cursor: zoom-in; }
+  .frame .busy { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(31,41,55,.82); color: #fff; font: 12.5px var(--round); padding: 5px 8px 7px; text-align: left; }
+  .frame .busy .progress { background: rgba(255,255,255,.25); margin-top: 4px; height: 6px; }
+  .under { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; min-height: 28px; }
+  .under .ver { font-size: 12.5px; color: var(--dim); display: inline-flex; align-items: center; gap: 2px; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .under .ver button { padding: 1px 7px; }
+  .under .est { font-size: 12.5px; color: var(--dim); }
+  .note { font-size: 12.5px; min-height: 16px; }
+  .note.bad { color: var(--bad); }
+  .words label.lbl { margin-top: 7px; } .words label.lbl:first-child { margin-top: 0; }
+  .words .opts { display: flex; gap: 8px 14px; flex-wrap: wrap; margin-top: 8px; }
+  .addshot { margin-top: 12px; width: 100%; border: 2px dashed #d9c98a; background: transparent; color: #9a7b1d; font: 700 16px var(--hand); padding: 12px; }
+
+  dialog { border: 2px solid var(--ink); border-radius: 18px; padding: 0; width: min(560px, calc(100vw - 24px)); color: var(--ink); background: var(--paper);
+    box-shadow: 6px 6px 0 rgba(31,41,55,.15); font: 15px/1.5 var(--round); }
+  dialog::backdrop { background: rgba(60,40,0,.35); }
+  .dlg { padding: 20px 22px 22px; }
+  .dlg h2 { font: 700 21px var(--hand); margin: 0 0 10px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip { border-radius: 999px; padding: 5px 13px; font-size: 13.5px; font-weight: 500; }
+  .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #big { width: auto; max-width: calc(100vw - 24px); background: #000; border-color: #000; }
+  #big img { display: block; max-width: calc(100vw - 30px); max-height: calc(100vh - 60px); }
+  #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px;
+    font-size: 14px; max-width: min(560px, calc(100vw - 24px)); display: none; z-index: 20; box-shadow: 0 10px 30px -10px rgba(0,0,0,.5); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="home"><i></i>Penguin's Storyboard</h1>
+    <nav class="appnav" aria-label="Sections"><a href="/" class="on">Movies</a><a href="/music/">Music</a><a href="/models">Models</a></nav>
+    <div class="mode">
+      <span class="dim">The queue:</span>
+      <div class="seg">
+        <button data-mode="now" title="Work through the queue right away">Go now</button>
+        <button data-mode="night" class="night" title="Wait, then work through the night">Night mode</button>
+        <button data-mode="paused" title="Nothing runs">Paused</button>
+      </div>
+      <span class="hours" id="hours">from <input type="time" id="nstart"> to <input type="time" id="nend"></span>
+    </div>
+  </header>
+  <div class="bubble"><span id="say">One moment…</span><span class="pill" id="awake"></span><span class="pill" id="engine"></span></div>
+</div>
+<div class="layout">
+  <main id="main"></main>
+  <aside>
+    <h3>Queue <small id="qsum"></small></h3>
+    <div id="jobs"></div>
+    <footer><button class="small ghost" id="clear">Clear finished</button></footer>
+  </aside>
+</div>
+
+<dialog id="newdlg"><form method="dialog" class="dlg" id="newform">
+  <h2>Empty project</h2>
+  <p class="dim" style="margin:-6px 0 12px">Write every shot yourself. To have it written for you, use the idea box instead.</p>
+  <label class="lbl" for="nname">What is it called?</label>
+  <input type="text" id="nname" style="width:100%;margin-bottom:14px" maxlength="80" placeholder="The Penguin Who Wanted to Fly">
+  <label class="lbl">What are you making?</label><div class="chips" id="nkind"></div>
+  <label class="lbl">What shape?</label><div class="chips" id="nshape"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button type="button" id="ncancel">Cancel</button><button class="primary" id="ncreate" type="submit">Create</button>
+  </div>
+</form></dialog>
+<dialog id="big"><img alt=""></dialog>
+<div id="toast"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+function h(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k === 'value' || k === 'disabled' || k === 'checked' || k === 'selected') e[k] = v;
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) { if (kid == null || kid === false) continue; e.append(kid.nodeType ? kid : document.createTextNode(String(kid))); }
+  return e;
+}
+let ST = null, view = { page: 'home', pid: null, sig: '' }, homeSig = '', queueSig = '';
+const AR = { wide: '832 / 480', tall: '480 / 832', square: '1 / 1' };
+const startLabels = u => ({ picture: `This ${u}'s picture`, previous: `The end of the ${u} before`, text: 'Nothing, just the words' });
+const LENGTHS = [[15, '15 seconds'], [30, '30 seconds'], [45, '45 seconds'], [60, '1 minute'], [90, '1½ minutes'], [120, '2 minutes'], [180, '3 minutes']];
+const draft = { idea: '', kind: 'story', seconds: 30, shape: 'wide', shot: 5, model: null, music: null };
+
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 6000); }
+async function api(path, body) {
+  let r;
+  try {
+    r = await fetch(path, body === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Storyboard': '1' }, body: JSON.stringify(body) });
+  } catch (e) { throw new Error('offline'); }
+  const j = await r.json().catch(() => ({ error: 'That did not work.' }));
+  if (!r.ok) { toast(j.error || 'That did not work.'); throw new Error(j.error); }
+  return j;
+}
+async function act(path, body = {}) { try { const r = await api(path, body); await poll(); return r; } catch (e) { return null; } }
+
+function fmtDur(s) {
+  s = Math.max(0, Math.round(s));
+  if (s < 90) return s < 45 ? 'under a minute' : '1 min';
+  const m = Math.round(s / 60);
+  if (m < 60) return m + ' min';
+  const hh = Math.floor(m / 60), mm = m % 60;
+  return hh + ' h' + (mm ? ' ' + mm + ' min' : '');
+}
+function about(s) { return s < 45 ? 'under a minute' : 'about ' + fmtDur(s); }
+function fmtClock(ts) { return new Date(ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function fmtHM(hm) { const [a, b] = hm.split(':').map(Number); const d = new Date(); d.setHours(a, b, 0, 0); return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+function modelSelect(id, cur, onchange) {
+  const ms = ST.text_models || [];
+  return h('select', { id, title: 'Which Ollama model writes the script', onchange },
+    ms.length ? ms.map(m => h('option', { value: m.name, selected: m.name === cur }, m.name + (m.online ? ' (online)' : ` · ${m.gb} GB`)))
+              : h('option', { value: '' }, ST.ollama === 'missing' ? 'Ollama is not installed' : 'Looking for Ollama…'));
+}
+
+async function poll() {
+  try { ST = await api('/api/state'); } catch (e) { $('#say').textContent = 'The Storyboard app is not answering. Start it again with “Start Storyboard”.'; return; }
+  render();
+}
+function go(page, pid) { view = { page, pid: pid || null, sig: '' }; homeSig = ''; location.hash = pid ? 'p=' + pid : ''; render(); window.scrollTo(0, 0); }
+
+function render() {
+  if (!ST) return;
+  renderTop(); renderQueue();
+  const p = view.page === 'project' ? ST.projects.find(x => x.id === view.pid) : null;
+  if (view.page === 'project' && !p) { view = { page: 'home', pid: null, sig: '' }; homeSig = ''; }
+  if (p) renderProject(p); else renderHome();
+}
+
+/* ---------- top bar ---------- */
+function renderTop() {
+  const s = ST.settings;
+  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.mode === s.mode));
+  $('#hours').classList.toggle('show', s.mode === 'night');
+  for (const [id, k] of [['nstart', 'night_start'], ['nend', 'night_end']]) { const el = $('#' + id); if (document.activeElement !== el) el.value = s[k].padStart(5, '0'); }
+  const run = ST.jobs.find(j => j.status === 'running'), waiting = ST.jobs.filter(j => j.status === 'waiting');
+  const n = waiting.length + (run ? 1 : 0);
+  const writing = ST.projects.find(p => p.writing);
+  let t;
+  if (s.mode === 'paused') t = n ? `Paused. ${plural(n, 'job')} waiting. Nothing runs until you choose Go now or Night mode.` : 'Paused. Nothing will run.';
+  else if (!n) t = writing ? 'Writing a script…' : s.mode === 'night' ? `Night mode is on, ${fmtHM(s.night_start)} to ${fmtHM(s.night_end)}. Nothing is in the queue yet.` : 'Nothing in the queue. Tell me an idea and press Begin.';
+  else if (s.mode === 'night' && !ST.night.active) {
+    t = `Night mode: I start at ${fmtHM(s.night_start)} (in ${fmtDur(ST.night.starts_in)}) and keep this Mac awake. ${plural(n, 'job')}, ${about(ST.seconds_left)} of work, done around ${fmtClock(ST.finish_at)}.`;
+  } else if (run) {
+    t = `Working on ${run.label}. ${run.phase}, ${about(run.remaining)} left.` + (waiting.length ? ` ${waiting.length} more waiting, all done around ${fmtClock(ST.finish_at)}.` : '');
+  } else t = ST.comfy === 'up' ? 'Starting the next job…' : 'Waking up the engine, then starting…';
+  if (s.mode === 'night' && n && ST.finish_at) {
+    const [eh, em] = s.night_end.split(':').map(Number);
+    const startTs = ST.night.active ? ST.now : ST.now + (ST.night.starts_in || 0);
+    const end = new Date(startTs * 1000); end.setHours(eh, em, 0, 0); if (end.getTime() / 1000 <= startTs) end.setDate(end.getDate() + 1);
+    if (ST.finish_at > end.getTime() / 1000) t += ` That is more than one night: I stop at ${fmtHM(s.night_end)} and carry on the next evening.`;
+  }
+  $('#say').textContent = t;
+  const aw = $('#awake'); aw.style.display = ST.awake ? '' : 'none'; aw.textContent = 'Keeping this Mac awake'; aw.className = 'pill moon';
+  const en = $('#engine'); en.className = 'pill' + (ST.comfy === 'up' ? ' ok' : '');
+  en.textContent = ST.comfy === 'up' ? 'Engine ready' : ST.comfy === 'starting' ? 'Engine starting…' : 'Engine asleep (starts when needed)';
+}
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => act('/api/settings', { mode: b.dataset.mode }));
+for (const [id, k] of [['nstart', 'night_start'], ['nend', 'night_end']]) $('#' + id).onchange = e => e.target.value && act('/api/settings', { [k]: e.target.value });
+$('#home').onclick = () => go('home');
+$('#clear').onclick = () => act('/api/jobs/clear');
+
+/* ---------- queue panel ---------- */
+function jobMeta(j, pos) {
+  if (j.status === 'running') return `${j.phase} · ${about(j.remaining)} left`;
+  if (j.status === 'waiting') return (j.note ? j.note + ' · ' : '') + `Waiting, number ${pos} · ${about(j.estimate)}`;
+  if (j.status === 'done') return 'Done' + (j.finished && j.started ? ' in ' + fmtDur(j.finished - j.started) : '');
+  if (j.status === 'failed') return "Didn't work: " + (j.error || 'unknown problem');
+  return 'Cancelled';
+}
+function renderQueue() {
+  const active = ST.jobs.filter(j => j.status === 'running').concat(ST.jobs.filter(j => j.status === 'waiting'));
+  const finished = ST.jobs.filter(j => !['running', 'waiting'].includes(j.status)).reverse().slice(0, 25);
+  const list = active.concat(finished);
+  $('#qsum').textContent = active.length ? `${plural(active.length, 'job')} · ${about(ST.seconds_left)}` : '';
+  const sig = list.map(j => j.id + j.status).join(',');
+  const box = $('#jobs');
+  if (sig !== queueSig) {
+    queueSig = sig;
+    box.replaceChildren(...(list.length ? list.map(j => {
+      const acts = [];
+      if (j.status === 'waiting') acts.push(h('button', { class: 'small', onclick: () => act(`/api/job/${j.id}/first`) }, 'Do next'), h('button', { class: 'small danger', onclick: () => act(`/api/job/${j.id}/cancel`) }, 'Remove'));
+      if (j.status === 'running') acts.push(h('button', { class: 'small danger', onclick: () => act(`/api/job/${j.id}/cancel`) }, 'Stop'));
+      if (j.status === 'failed' || j.status === 'cancelled') acts.push(h('button', { class: 'small', onclick: () => act(`/api/job/${j.id}/retry`) }, 'Try again'));
+      if (!['running', 'waiting'].includes(j.status)) acts.push(h('button', { class: 'small ghost', onclick: () => act(`/api/job/${j.id}/cancel`) }, 'Remove'));
+      return h('div', { class: 'job ' + j.status, 'data-id': j.id },
+        h('div', { class: 'name', onclick: () => ST.projects.some(p => p.id === j.project) && go('project', j.project) }, j.label),
+        h('div', { class: 'meta' }), j.status === 'running' && h('div', { class: 'progress' }, h('i')), h('div', { class: 'acts' }, acts));
+    }) : [h('div', { class: 'empty' }, 'Nothing here yet. Everything lines up here and is made one at a time: all the pictures first, then the videos, then the finished movie.')]));
+  }
+  let pos = active.some(j => j.status === 'running') ? 1 : 0;
+  for (const j of list) {
+    const row = box.querySelector(`[data-id="${j.id}"]`); if (!row) continue;
+    if (j.status === 'waiting') pos++;
+    row.querySelector('.meta').textContent = jobMeta(j, pos);
+    const bar = row.querySelector('.progress i'); if (bar) bar.style.width = Math.round((j.progress || 0) * 100) + '%';
+  }
+}
+
+/* ---------- home: idea to movie ---------- */
+function ideaShots() { return Math.max(1, Math.ceil(draft.seconds / draft.shot)); }
+function ideaSummary() {
+  const n = ideaShots(), est = ST.estimates[draft.shape];
+  // with character pictures: reckon on two characters, and one of them in each shot
+  const pic = ST.refs ? (est.image_refs || [])[1] || est.image : est.image, extra = ST.refs ? 2 * (est.ref || est.image) : 0;
+  const each = pic + (ST.turbo ? est.video_fast : est.video)[String(draft.shot)];
+  const tune = draft.music ? 180 : 0;
+  return `That is ${plural(n, 'shot')} of ${draft.shot} seconds: ${ST.refs ? 'a picture of each character, then ' : ''}${plural(n, 'picture')} and ${plural(n, 'video')}, then ${draft.music ? 'the music and ' : ''}one finished movie. About ${fmtDur(n * each + extra + tune + 60)} to make on this Mac.`;
+}
+function renderHome() {
+  const sig = 'home|' + ST.ollama + '|' + ST.music.ready + '|' + Object.values(ST.kits || {}).join(',') + '|' + (ST.text_models || []).map(m => m.name).join(',') + '|' + ST.projects.map(p => [p.id, p.name, p.kind, p.writing, p.shots.length, p.shots.filter(s => s.image).length, p.shots.filter(s => s.video).length, (p.shots.find(s => s.image) || {}).image].join(':')).join('|');
+  const typing = document.activeElement && document.activeElement.id === 'idea';
+  if (sig === homeSig || (typing && $('#isum'))) { const el = $('#isum'); if (el) el.textContent = ideaSummary(); return; }
+  homeSig = sig; view.sig = '';
+  if (!draft.model) draft.model = ST.text_model;
+  if (draft.music === null && ST.music.ready) draft.music = 'film';   // music is on by default once it can be written here
+  const opt = (items, cur) => items.map(([v, label]) => h('option', { value: v, selected: String(v) === String(cur) }, label));
+  const upd = () => { $('#isum').textContent = ideaSummary(); };
+  const start = async begin => {
+    draft.idea = $('#idea').value;
+    if (!draft.idea.trim()) { toast('Say what the movie is about first.'); $('#idea').focus(); return; }
+    const r = await act('/api/idea', { idea: draft.idea, kind: draft.kind, seconds: draft.seconds, shot_seconds: draft.shot, shape: draft.shape, model: draft.model || '', music: draft.music || '', begin });
+    if (r && r.id) { draft.idea = ''; go('project', r.id); }
+  };
+  const noWriter = !(ST.text_models || []).length;
+  const cards = ST.projects.slice().sort((a, b) => b.created - a.created).map(p => {
+    const first = p.shots.find(s => s.image);
+    const thumb = h('div', { class: 'thumb' }, first ? null : p.writing ? 'Writing the script…' : 'No pictures yet');
+    if (first) thumb.style.backgroundImage = `url("/media/${p.id}/${first.image}")`;
+    const unit = ST.kinds[p.kind].unit.toLowerCase();
+    return h('div', { class: 'pcard', onclick: () => go('project', p.id) }, thumb,
+      h('div', { class: 'body' }, h('b', {}, p.name), h('span', { class: 'tag' }, ST.kinds[p.kind].label),
+        h('div', { class: 'dim', style: 'font-size:13px;margin-top:4px' }, `${plural(p.shots.length, unit)} · ${plural(p.shots.filter(s => s.image).length, 'picture')} · ${plural(p.shots.filter(s => s.video).length, 'video')}`)));
+  });
+  // On a new computer: say what still has to be downloaded before a movie can be made, and where.
+  const KIT_NAMES = { engine: 'the picture and video engine', pictures: 'the picture model', video: 'the video model', writer: 'a script-writing model' };
+  const missing = Object.keys(KIT_NAMES).filter(id => (ST.kits || {})[id] && ST.kits[id] !== 'ready');
+  const todo = missing.length ? h('div', { class: 'banner todo' },
+    `Before a movie can be made, this still has to arrive on this computer: ${missing.map(id => KIT_NAMES[id]).join(', ')}.`,
+    h('a', { href: '/models' }, 'Open Models')) : null;
+  $('#main').replaceChildren(
+    h('div', { class: 'idea' },
+      h('h2', {}, 'Tell me the idea. I write it, draw it, film it and put it together.'),
+      h('p', { class: 'sub' }, 'One idea in, one finished movie out. You can read and change the script before anything is made.'),
+      h('textarea', { id: 'idea', rows: 3, maxlength: 4000, placeholder: 'A lonely lighthouse keeper finds a baby dragon washed up on the rocks and teaches it to light the lamp', oninput: e => draft.idea = e.target.value }, draft.idea),
+      h('div', { class: 'line' }, 'I want a',
+        h('select', { onchange: e => { draft.kind = e.target.value; } }, opt(Object.entries(ST.kinds).map(([k, v]) => [k, v.label.toLowerCase()]), draft.kind)),
+        'about', h('select', { onchange: e => { draft.seconds = +e.target.value; upd(); } }, opt(LENGTHS, draft.seconds)), 'long,',
+        h('select', { onchange: e => { draft.shape = e.target.value; upd(); } }, opt(Object.entries(ST.shapes), draft.shape)), ', with',
+        h('select', { onchange: e => { draft.shot = +e.target.value; upd(); } }, opt([[3, '3-second'], [5, '5-second'], [10, '10-second']], draft.shot)), 'shots.'),
+      h('div', { class: 'line' }, 'Music for it:',
+        h('select', { disabled: ST.music.ready === false, onchange: e => { draft.music = e.target.value; upd(); } }, opt([['', 'none'], ...ST.music.styles.map(([k, l]) => [k, l.toLowerCase()])], draft.music || '')),
+        h('span', { class: 'dim', style: 'font-size:13.5px' }, ST.music.ready === false ? ST.music.why : 'Claude writes it to fit the movie once the videos are done.')),
+      h('div', { class: 'sum', id: 'isum' }, ideaSummary()),
+      h('div', { class: 'go' },
+        h('button', { class: 'primary big', disabled: noWriter, onclick: () => start(true) }, 'Begin: make the whole movie'),
+        h('button', { disabled: noWriter, onclick: () => start(false) }, 'Just write the script first'),
+        h('span', { class: 'dim', style: 'font-size:13.5px' }, 'Script written by'), modelSelect('imodel', draft.model, e => { draft.model = e.target.value; })),
+      noWriter && h('div', { class: 'dim', style: 'margin-top:8px;font-size:13.5px' }, ST.ollama === 'missing' ? 'The script writer needs Ollama (ollama.com). Without it you can still make an empty project and write the shots yourself.' : 'Looking for Ollama’s writing models…')),
+    h('h3', { class: 'sec' }, 'Your projects'),
+    h('div', { class: 'grid' }, cards, h('div', { class: 'pcard new', onclick: openNew }, '+ Empty project')));
+  if (todo) $('#main').prepend(todo);
+}
+let nk = 'story', nsh = 'wide';
+function openNew() {
+  const mk = (box, items, cur, set) => box.replaceChildren(...Object.entries(items).map(([k, label]) =>
+    h('button', { type: 'button', class: 'chip' + (k === cur ? ' on' : ''), onclick: () => { set(k); openNew.fill(); } }, label)));
+  openNew.fill = () => {
+    mk($('#nkind'), Object.fromEntries(Object.entries(ST.kinds).map(([k, v]) => [k, v.label])), nk, k => nk = k);
+    mk($('#nshape'), ST.shapes, nsh, k => nsh = k);
+  };
+  openNew.fill(); $('#nname').value = ''; $('#newdlg').showModal(); $('#nname').focus();
+}
+$('#ncancel').onclick = () => $('#newdlg').close();
+$('#newform').onsubmit = async e => {
+  e.preventDefault(); $('#newdlg').close();
+  const r = await act('/api/projects', { name: $('#nname').value, kind: nk, shape: nsh });
+  if (r && r.id) go('project', r.id);
+};
+
+/* ---------- project ---------- */
+const saveTimers = {};
+function saveLater(key, path, body) { clearTimeout(saveTimers[key]); saveTimers[key] = setTimeout(() => api(path, typeof body === 'function' ? body() : body).catch(() => {}), 500); }
+function setIfIdle(el, val) { if (el && document.activeElement !== el && el.value !== val) el.value = val; }
+function picSecs(p, s, est) { const n = ((ST.ref_counts || {})[p.id] || {})[s.id] || 0; return (est.image_refs || [])[n] || est.image; }
+function leftToMake(p, est, fast) {
+  let secs = 0, pics = 0, vids = 0;
+  for (const s of p.shots) {
+    if (!(s.text || '').trim()) continue;
+    if (!s.image && s.start_from === 'picture') { secs += picSecs(p, s, est); pics++; }
+    if (!s.video) { secs += (fast ? est.video_fast : est.video)[String(s.seconds || 5)] || 0; vids++; }
+  }
+  const chars = (ST.ref_todo || {})[p.id] || 0;  // character pictures that are made first
+  secs += chars * (est.ref || est.image);
+  return { secs, pics, vids, chars };
+}
+
+function renderProject(p) {
+  const unit = ST.kinds[p.kind].unit;
+  const sig = [p.id, p.kind, ST.turbo, ST.refs, p.refs !== false, p.writing || '', p.script_error || '', p.movie || '', (p.cast || []).map(c => c.id).join(','), (ST.text_models || []).length, p.shots.map(s => s.id).join(',')].join('|');
+  if (sig !== view.sig) { view.sig = sig; buildProject(p, unit); }
+  const root = $('#proj'); root.style.setProperty('--ar', AR[p.shape]);
+  setIfIdle($('#pname'), p.name); setIfIdle($('#pstyle'), p.style || ''); setIfIdle($('#pshape'), p.shape); setIfIdle($('#pidea'), p.idea || '');
+  const fast = ST.turbo && p.speed !== 'best';
+  setIfIdle($('#pspeed'), fast ? 'fast' : 'best');
+  (p.cast || []).forEach((c, i) => { setIfIdle($(`[data-cn="${i}"]`), c.name || ''); setIfIdle($(`[data-cl="${i}"]`), c.look || ''); });
+  patchCast(p);
+  patchMusic(p);
+  const est = ST.estimates[p.shape], left = leftToMake(p, est, fast);
+  const mine = ST.jobs.filter(j => j.project === p.id && ['waiting', 'running'].includes(j.status));
+  const total = p.shots.reduce((a, s) => a + ((s.text || '').trim() ? (s.seconds || 5) : 0), 0);
+  const bb = $('#begin'), bw = $('#beginwhat');
+  if (bb) {
+    bb.disabled = !!p.writing || mine.some(j => j.kind === 'movie') || !p.shots.some(s => (s.text || '').trim());
+    bb.textContent = mine.some(j => j.kind === 'movie') ? 'Making the movie…' : p.movie && !left.pics && !left.vids ? 'Join the movie again' : 'Begin: make the whole movie';
+    const tune = (p.music || {}).on && !p.soundtrack;  // Begin also has the music written
+    bw.textContent = p.writing ? '' : mine.length ? `${plural(mine.length, 'job')} in the queue for this project.`
+      : left.pics + left.vids ? `${plural(p.shots.length, unit.toLowerCase())}, ${total} seconds. Still to make: ${left.chars ? plural(left.chars, 'character picture') + ', ' : ''}${plural(left.pics, 'picture')} and ${plural(left.vids, 'video')}${tune ? ', and the music' : ''}, ${about(left.secs + (tune ? 180 : 0) + 30)}. ${left.chars ? 'Characters first, then pictures' : 'Pictures first'}, then videos, then ${tune ? 'the music, then ' : ''}one movie file.`
+      : `${plural(p.shots.length, unit.toLowerCase())}, ${total} seconds. Everything is made.`;
+  }
+  p.shots.forEach((s, i) => patchShot(p, s, i, est, fast));
+}
+
+function buildProject(p, unit) {
+  const u = unit.toLowerCase();
+  const castBody = () => ({ cast: [...document.querySelectorAll('.crow')].map(r => ({ id: r.dataset.cid, name: r.querySelector('[data-cn]').value, look: r.querySelector('[data-cl]').value })) });
+  const saveCast = () => saveLater('cast', `/api/project/${p.id}`, castBody);
+  const pics = ST.refs && p.refs !== false, cbase = c => `/api/project/${p.id}/cast/${c.id}`;
+  const banner = p.writing ? h('div', { class: 'banner busy' }, h('span', { class: 'spin' }),
+      p.writing === 'waiting' ? 'Waiting for the job in progress to finish, then I write the script…' : 'Writing the script… this usually takes a minute or two.')
+    : p.script_error ? h('div', { class: 'banner err' }, 'The script could not be written: ' + p.script_error) : null;
+  const final = p.movie ? h('div', { class: 'final' },
+    h('div', { class: 'row' }, 'Your finished movie', h('button', { class: 'small', onclick: () => act(`/api/project/${p.id}/reveal`) }, 'Show the files')),
+    h('video', { src: `/movie/${p.id}/${p.movie}`, controls: true, playsinline: true, preload: 'metadata' })) : null;
+  const head = h('div', { class: 'phead' },
+    h('div', { class: 'row' },
+      h('input', { type: 'text', id: 'pname', maxlength: 80, value: p.name, oninput: e => saveLater('pn', `/api/project/${p.id}`, { name: e.target.value }) }),
+      h('span', { class: 'tag' }, ST.kinds[p.kind].label),
+      h('select', { id: 'pshape', title: 'Shape of the pictures and videos', onchange: e => act(`/api/project/${p.id}`, { shape: e.target.value }) },
+        Object.entries(ST.shapes).map(([k, v]) => h('option', { value: k, selected: k === p.shape }, v))),
+      ST.turbo && h('select', { id: 'pspeed', title: 'Fast makes a video in a fraction of the time. Best quality is sharper but takes about three times longer.', onchange: e => act(`/api/project/${p.id}`, { speed: e.target.value }) },
+        h('option', { value: 'fast' }, 'Videos: fast'), h('option', { value: 'best' }, 'Videos: best quality (slow)'))),
+    h('div', { class: 'begin' },
+      h('button', { class: 'primary big', id: 'begin', onclick: async () => {
+        const r = await act(`/api/project/${p.id}/begin`);
+        if (r) toast(ST.settings.mode === 'paused' ? 'Lined up, but the queue is paused. Choose Go now or Night mode at the top.' : ST.settings.mode === 'night' ? 'Lined up for tonight.' : 'On it. Pictures first, then videos, then the finished movie.');
+      } }, 'Begin: make the whole movie'),
+      h('div', { class: 'what dim', id: 'beginwhat' })),
+    h('div', { class: 'field' }, h('label', { class: 'lbl', for: 'pidea' }, 'The idea'),
+      h('textarea', { id: 'pidea', rows: 2, maxlength: 4000, placeholder: 'What is this about? The script writer works from this.', oninput: e => saveLater('pi', `/api/project/${p.id}`, { idea: e.target.value }) }, p.idea || ''),
+      h('div', { class: 'actions' },
+        h('button', { class: 'small', disabled: !!p.writing || !(ST.text_models || []).length, onclick: async () => {
+          const has = p.shots.some(s => (s.text || '').trim());
+          if (has && !confirm(`Write the script again? The ${u}s here are replaced by new ones. Pictures and videos already made stay in the project folder but are no longer shown.`)) return;
+          await api(`/api/project/${p.id}`, { idea: $('#pidea').value }).catch(() => {});
+          await act(`/api/project/${p.id}/rewrite`, { model: $('#pmodel').value });
+        } }, p.shots.some(s => (s.text || '').trim()) ? 'Write the script again' : 'Write the script for me'),
+        h('span', { class: 'dim', style: 'font-size:13px' }, 'using'), modelSelect('pmodel', ST.text_model, e => api('/api/settings', { text_model: e.target.value }).catch(() => {})))),
+    h('div', { class: 'field' }, h('label', { class: 'lbl', for: 'pstyle' }, 'The look of the whole thing (added to every ' + u + ')'),
+      h('textarea', { id: 'pstyle', rows: 2, maxlength: 1000, placeholder: 'For example: soft watercolor children’s book illustration, warm colors', oninput: e => saveLater('ps', `/api/project/${p.id}`, { style: e.target.value }) }, p.style || '')),
+    h('div', { class: 'field cast' + (pics ? ' pics' : '') },
+      h('label', { class: 'lbl' }, pics
+        ? `Characters. Use their names in the ${u}s. Each character gets a picture of their own, and every ${u} they are in is drawn from that picture, so they keep looking the same.`
+        : `Characters. Use their names in the ${u}s: this description is added, word for word, to every picture they are in, so they keep looking the same.`),
+      ST.refs && h('label', { class: 'chk' },
+        h('input', { type: 'checkbox', id: 'prefs', checked: p.refs !== false, onchange: e => act(`/api/project/${p.id}`, { refs: e.target.checked }) }),
+        'Draw every picture from the character pictures (closer match, but each picture takes longer)'),
+      (p.cast || []).map((c, i) => h('div', { class: 'crow', 'data-cid': c.id },
+        pics && h('div', { class: 'cpic', 'data-cp': c.id }),
+        h('input', { type: 'text', 'data-cn': i, maxlength: 40, placeholder: 'Name', value: c.name || '', oninput: saveCast }),
+        h('input', { type: 'text', 'data-cl': i, maxlength: 400, placeholder: 'What they look like', value: c.look || '', oninput: saveCast }),
+        h('button', { class: 'ghost danger', title: 'Remove this character', onclick: e => { e.target.closest('.crow').remove(); act(`/api/project/${p.id}`, castBody()); } }, '✕'),
+        pics && h('div', { class: 'cacts' },
+          h('button', { class: 'small', 'data-cm': c.id, title: 'Make this character’s picture from the description', onclick: () => act(cbase(c) + '/make') }),
+          h('button', { class: 'small', title: 'Use a picture of your own for this character', onclick: () => { castTarget = c.id; $('#castfile').click(); } }, 'Use my own picture'),
+          h('button', { class: 'small ghost', 'data-cr': c.id, title: 'Stop using a picture for this character', onclick: () => act(cbase(c) + '/remove_picture') }, 'Remove picture'),
+          h('span', { class: 'ver', 'data-cv': c.id },
+            h('button', { class: 'small ghost', title: 'Earlier picture', onclick: () => act(cbase(c) + '/pick', { dir: -1 }) }, '‹'), h('span'),
+            h('button', { class: 'small ghost', title: 'Later picture', onclick: () => act(cbase(c) + '/pick', { dir: 1 }) }, '›')),
+          h('span', { class: 'dim', 'data-cs': c.id })))),
+      h('div', { class: 'actions', style: 'margin-top:0' },
+        h('button', { class: 'small', onclick: () => { const b = castBody(); b.cast.push({ name: '', look: '' }); act(`/api/project/${p.id}`, b); } }, '+ Add a character'),
+        pics && h('button', { class: 'small', id: 'remake', style: 'display:none', title: 'Make the shots that have a character in them again, drawn from the character pictures. What you have now is kept as an earlier version.', onclick: () => remake(p.id) }, 'Remake the shots from the character pictures')),
+      h('input', { type: 'file', id: 'castfile', accept: 'image/*,.heic', style: 'display:none', onchange: e => uploadCastPicture(p.id, e.target) })),
+    h('div', { class: 'actions', style: 'margin-top:12px' },
+      h('button', { class: 'small', onclick: async () => { toast('Joining the videos…'); const r = await act(`/api/export/${p.id}/movie`); if (r) toast('Movie saved. Showing it in Finder.'); } }, 'Join the videos made so far'),
+      h('button', { class: 'small', onclick: async () => { const r = await act(`/api/export/${p.id}/book`); if (r) toast('Storybook saved. Open index.html, then File → Print to make a PDF.'); } }, 'Make a storybook'),
+      h('button', { class: 'small ghost', onclick: () => act(`/api/project/${p.id}/reveal`) }, 'Open folder'),
+      h('button', { class: 'small ghost danger', style: 'margin-left:auto', onclick: async () => { if (confirm(`Delete “${p.name}”? It is moved to the Storyboard trash folder, not erased.`)) { await act(`/api/project/${p.id}/delete`); go('home'); } } }, 'Delete project')),
+    h('div', { class: 'field musicbox' },
+      h('label', { class: 'lbl' }, 'Music under the finished movie'),
+      h('div', { id: 'musicnow' }),
+      h('div', { class: 'mrow' },
+        h('label', { class: 'chk', style: 'margin:0' },
+          h('input', { type: 'checkbox', id: 'mon', checked: !!(p.music || {}).on, onchange: e => act(`/api/project/${p.id}`, { music: { on: e.target.checked } }) }),
+          'Have the music written when I press Begin'),
+        h('select', { id: 'mstyle', title: 'What kind of music', onchange: e => act(`/api/project/${p.id}`, { music: { style: e.target.value } }) },
+          ST.music.styles.map(([k, l]) => h('option', { value: k, selected: k === ((p.music || {}).style || 'film') }, l))),
+        h('button', { class: 'small', id: 'mmake', onclick: async () => {
+          await api(`/api/project/${p.id}`, { music: { note: $('#mnote').value } }).catch(() => {});
+          const r = await act(`/api/project/${p.id}/music/make`);
+          if (r) toast(ST.settings.mode === 'paused' ? 'Lined up, but the queue is paused. Choose Go now or Night mode at the top.' : 'On it. The music takes a few minutes, then the movie is put together again with it.');
+        } }),
+        h('button', { class: 'small ghost', onclick: () => $('#musicfile').click() }, 'Use my own music file')),
+      h('input', { type: 'text', id: 'mnote', maxlength: 300, placeholder: 'What should it feel like? For example: tense, a slow build, a hopeful ending (optional)', value: (p.music || {}).note || '', oninput: e => saveLater('mn', `/api/project/${p.id}`, () => ({ music: { note: e.target.value } })) }),
+      h('div', { class: 'dim', id: 'mhint', style: 'font-size:12.5px;margin-top:5px' }),
+      h('input', { type: 'file', id: 'musicfile', accept: 'audio/*,.mp3,.m4a,.wav,.aac,.flac,.ogg', style: 'display:none', onchange: e => uploadMusic(p.id, e.target) })));
+  const shots = p.shots.map((s, i) => buildShot(p, s, i, unit));
+  $('#main').replaceChildren(h('div', { id: 'proj' },
+    h('a', { class: 'back', onclick: () => go('home') }, '← Home'), banner, final, head, shots,
+    !p.writing && h('button', { class: 'addshot', onclick: () => act(`/api/project/${p.id}/add_shot`) }, '+ Add a ' + u)));
+}
+let castTarget = null;
+async function uploadCastPicture(pid, input) {
+  const f = input.files[0]; if (!f || !castTarget) return;
+  toast('Adding the picture…');
+  const r = await fetch(`/api/project/${pid}/cast/${castTarget}/picture`, { method: 'POST', headers: { 'X-Storyboard': '1', 'X-Filename': encodeURIComponent(f.name) }, body: f });
+  const j = await r.json().catch(() => ({}));
+  toast(r.ok ? 'Picture added. Shots with this character are drawn from it from now on.' : (j.error || 'That did not work.'));
+  input.value = ''; poll();
+}
+async function remake(pid) {
+  let pv;
+  try { pv = await api(`/api/project/${pid}/remake`, { preview: true }); } catch (e) { return; }
+  const what = [pv.characters && plural(pv.characters, 'character picture'), plural(pv.pictures, 'new picture'), pv.videos && plural(pv.videos, 'new video')].filter(Boolean);
+  const list = what.length > 1 ? what.slice(0, -1).join(', ') + ' and ' + what[what.length - 1] : what[0];
+  const some = pv.pictures < pv.shots ? `${pv.pictures} of the ${pv.shots} shots will be made again: the ${pv.pictures === 1 ? 'one' : 'ones'} drawn from a character picture. The rest stay as they are. ` : '';
+  if (!confirm(`Make the shots again from the character pictures?\n\n${some}That is ${list}${pv.videos ? ', then the movie is joined again' : ''}: ${about(pv.seconds)} of work.\n\nWhat you have now is kept: use the ‹ › arrows under a shot to go back to it.`)) return;
+  const r = await act(`/api/project/${pid}/remake`);
+  if (r) toast(ST.settings.mode === 'paused' ? 'Lined up, but the queue is paused. Choose Go now or Night mode at the top.' : ST.settings.mode === 'night' ? 'Lined up for tonight.' : 'On it. Characters first, then the new pictures, then the new videos.');
+}
+function patchCast(p) {
+  const pr = $('#prefs'); if (pr && document.activeElement !== pr) pr.checked = p.refs !== false;
+  const rm = $('#remake');
+  if (rm) {  // only once there is something to make again; Begin covers everything that is still missing
+    const counts = (ST.ref_counts || {})[p.id] || {};
+    rm.style.display = p.shots.some(s => s.image && counts[s.id]) ? '' : 'none';
+    rm.disabled = !!p.writing || ST.jobs.some(j => j.project === p.id && ['waiting', 'running'].includes(j.status));
+  }
+  for (const c of p.cast || []) {
+    const pic = $(`[data-cp="${c.id}"]`); if (!pic) continue;
+    if (pic.dataset.file !== (c.ref || '')) {
+      pic.dataset.file = c.ref || '';
+      const url = c.ref ? `/media/${p.id}/${c.ref}` : null;
+      pic.replaceChildren(c.ref ? h('img', { src: url, alt: '', onclick: () => { $('#big img').src = url; $('#big').showModal(); } }) : 'No picture yet');
+    }
+    const mine = ST.jobs.filter(j => j.project === p.id && j.kind === 'ref' && j.cast === c.id);
+    const run = mine.find(j => j.status === 'running'), wait = mine.find(j => j.status === 'waiting'), last = mine[mine.length - 1];
+    const btn = $(`[data-cm="${c.id}"]`);
+    btn.disabled = !!(run || wait) || !(c.name || '').trim() || !(c.look || '').trim();
+    btn.textContent = run ? 'Making…' : wait ? 'In the queue' : c.ref ? 'Make a new picture' : 'Make the picture';
+    $(`[data-cr="${c.id}"]`).style.display = c.ref ? '' : 'none';
+    const vers = c.refs || [], ver = $(`[data-cv="${c.id}"]`);
+    ver.style.display = vers.length > 1 && c.ref ? '' : 'none';
+    ver.children[1].textContent = `${vers.indexOf(c.ref) + 1} of ${vers.length}`;
+    const note = $(`[data-cs="${c.id}"]`), failed = !run && !wait && last && last.status === 'failed';
+    note.className = failed ? 'bad' : 'dim';
+    note.textContent = run ? `${run.phase} · ${about(run.remaining)} left` : failed ? "Didn't work: " + (last.error || 'unknown problem')
+      : wait ? '' : c.ref ? (c.ref_own ? 'Your own picture' : '') : (c.name || '').trim() && (c.look || '').trim() ? 'Made for you when it is first needed' : 'Add a name and a description, or use your own picture';
+  }
+}
+// The music box: what is under the movie now, and the composing job while it runs.
+function patchMusic(p) {
+  const box = $('#musicnow'); if (!box) return;
+  const m = p.music || {}, stale = !!(ST.music_stale || {})[p.id];
+  const mine = ST.jobs.filter(j => j.project === p.id && j.kind === 'music');
+  const run = mine.find(j => j.status === 'running'), wait = mine.find(j => j.status === 'waiting'), last = mine[mine.length - 1];
+  const sig = [p.soundtrack || '', m.current || '', m.piece || '', m.title || '', p.soundtrack_name || '', stale].join('|');
+  if (box.dataset.sig !== sig) {
+    box.dataset.sig = sig;
+    const written = m.current === 'piece' && m.piece;
+    box.replaceChildren(...(p.soundtrack ? [
+      h('div', { class: 'mname' }, written ? `“${m.title || p.soundtrack_name}”, written for this movie` : (p.soundtrack_name || 'Your own music')),
+      h('audio', { controls: true, preload: 'none', src: `/media/${p.id}/${p.soundtrack}` }),
+      h('div', { class: 'actions', style: 'margin-top:6px' },
+        written && h('a', { class: 'btnlink', href: `/music/?piece=${m.piece}`, title: 'See the score, change it by hand or with Claude, then send it back' }, 'Open in the Music studio'),
+        stale && h('button', { class: 'small', onclick: () => act(`/api/project/${p.id}/music/use`, {}) }, 'The score was changed in the studio: update the movie'),
+        h('button', { class: 'small ghost', onclick: () => act(`/api/project/${p.id}/remove_soundtrack`) }, 'Remove the music')),
+      written && m.brief ? h('details', {}, h('summary', {}, 'See exactly what was sent to Claude to write it'), h('pre', {}, m.brief)) : ''
+    ] : [h('div', { class: 'dim' }, 'None yet.')]));
+  }
+  const on = $('#mon'); if (document.activeElement !== on) on.checked = !!m.on;
+  setIfIdle($('#mstyle'), m.style || 'film'); setIfIdle($('#mnote'), m.note || '');
+  const btn = $('#mmake');
+  btn.disabled = !!(run || wait) || !!p.writing || ST.music.ready === false || !p.shots.some(s => (s.text || '').trim());
+  btn.textContent = run ? 'Writing the music…' : wait ? 'In the queue' : p.soundtrack ? 'Write new music' : 'Write the music now';
+  const failed = !run && !wait && last && last.status === 'failed', hint = $('#mhint');
+  hint.className = failed ? 'bad' : 'dim';
+  const total = p.shots.reduce((a, s) => a + ((s.text || '').trim() ? (s.seconds || 5) : 0), 0);
+  const misfit = m.current === 'piece' && p.soundtrack && m.target && Math.abs(m.target - total) > 0.5;
+  hint.textContent = run ? `${run.phase} · ${about(run.remaining)} left` : failed ? "Didn't work: " + (last.error || 'unknown problem')
+    : misfit ? `The shots now add up to ${total} seconds, and this music was written for ${Math.round(m.target)}. It will be faded out or followed by silence; "Write new music" makes it fit again.`
+    : ST.music.ready === false ? ST.music.why
+    : 'Claude writes the music online, to the length of the shots. Only the mood and the timings are sent, never your script.';
+}
+async function uploadMusic(pid, input) {
+  const f = input.files[0]; if (!f) return;
+  toast('Adding the music…');
+  const r = await fetch(`/api/project/${pid}/soundtrack`, { method: 'POST', headers: { 'X-Storyboard': '1', 'X-Filename': encodeURIComponent(f.name) }, body: f });
+  const j = await r.json().catch(() => ({}));
+  toast(r.ok ? 'Music added. It plays under the finished movie.' : (j.error || 'That did not work.'));
+  input.value = ''; poll();
+}
+
+function buildShot(p, s, i, unit) {
+  const base = `/api/project/${p.id}/shot/${s.id}`, u = unit.toLowerCase();
+  const frame = kind => h('div', {}, h('div', { class: 'frame', 'data-f': kind }),
+    h('div', { class: 'under' },
+      h('button', { class: 'small', 'data-make': kind, title: 'Make just this one (again)', onclick: () => act(base + '/make', { what: kind }) }),
+      h('span', { class: 'est', 'data-est': kind }),
+      h('span', { class: 'ver', 'data-ver': kind },
+        h('button', { class: 'small ghost', title: 'Earlier version', onclick: () => act(base + '/pick', { kind, dir: -1 }) }, '‹'), h('span'),
+        h('button', { class: 'small ghost', title: 'Later version', onclick: () => act(base + '/pick', { kind, dir: 1 }) }, '›'))),
+    h('div', { class: 'note', 'data-note': kind }));
+  return h('div', { class: 'shot', 'data-shot': s.id },
+    h('div', { class: 'num' }, h('b', {}, i + 1),
+      h('button', { class: 'ghost', title: 'Move earlier', disabled: i === 0, onclick: () => act(base + '/move', { dir: -1 }) }, '↑'),
+      h('button', { class: 'ghost', title: 'Move later', disabled: i === p.shots.length - 1, onclick: () => act(base + '/move', { dir: 1 }) }, '↓'),
+      h('button', { class: 'ghost danger', title: 'Delete this ' + u, onclick: () => { if (!(s.image || s.video || (s.text || '').trim()) || confirm(`Delete ${u} ${i + 1}?`)) act(base + '/delete'); } }, '✕')),
+    h('div', { class: 'frames' }, frame('image'), frame('video')),
+    h('div', { class: 'words' },
+      h('label', { class: 'lbl' }, 'The picture: what do we see?'),
+      h('textarea', { rows: 4, maxlength: 2000, 'data-t': 'text', placeholder: 'Pip stands at the edge of an ice cliff at sunrise, looking up at seagulls, wide shot', oninput: e => saveLater(s.id + 't', base, { text: e.target.value }) }, s.text || ''),
+      (p.cast || []).length > 0 && h('label', { class: 'lbl' }, 'Who is in it? (names from Characters, separated by commas)'),
+      (p.cast || []).length > 0 && h('input', { type: 'text', style: 'width:100%', maxlength: 400, 'data-t': 'who', placeholder: (p.cast || []).map(c => c.name).filter(Boolean).join(', '), value: (s.who || []).join(', '), oninput: e => saveLater(s.id + 'w', base, { who: e.target.value }) }),
+      h('label', { class: 'lbl' }, 'The video: what moves, and how does the camera move?'),
+      h('textarea', { rows: 2, maxlength: 1000, 'data-t': 'motion', placeholder: 'Pip tilts his head as the seagulls circle; the camera slowly pushes in', oninput: e => saveLater(s.id + 'm', base, { motion: e.target.value }) }, s.motion || ''),
+      h('label', { class: 'lbl' }, 'Narration (optional, used in the storybook)'),
+      h('textarea', { rows: 2, maxlength: 4000, 'data-t': 'caption', placeholder: 'Pip had always wondered what the sky felt like.', oninput: e => saveLater(s.id + 'c', base, { caption: e.target.value }) }, s.caption || ''),
+      h('div', { class: 'opts' },
+        h('div', {}, h('label', { class: 'lbl' }, 'Video length'),
+          h('select', { 'data-t': 'seconds', onchange: e => act(base, { seconds: +e.target.value }) }, ST.seconds_choices.map(n => h('option', { value: n }, plural(n, 'second') + (n > 5 ? ` (made in ${Math.ceil(n / 5)} parts)` : ''))))),
+        h('div', {}, h('label', { class: 'lbl' }, 'The video starts from'),
+          h('select', { 'data-t': 'start_from', onchange: e => act(base, { start_from: e.target.value }) }, Object.entries(startLabels(u)).map(([k, v]) => h('option', { value: k }, v)))))));
+}
+
+function patchShot(p, s, i, est, fast) {
+  const card = document.querySelector(`[data-shot="${s.id}"]`); if (!card) return;
+  for (const k of ['text', 'motion', 'caption']) setIfIdle(card.querySelector(`[data-t="${k}"]`), s[k] || '');
+  const who = card.querySelector('[data-t="who"]');
+  if (who && document.activeElement !== who && who.value.split(',').map(x => x.trim()).filter(Boolean).join(', ') !== (s.who || []).join(', ')) who.value = (s.who || []).join(', ');
+  setIfIdle(card.querySelector('[data-t="seconds"]'), String(s.seconds || 3));
+  const sf = card.querySelector('[data-t="start_from"]'); setIfIdle(sf, s.start_from || 'picture');
+  sf.options[1].disabled = i === 0;
+  for (const kind of ['image', 'video']) {
+    const file = s[kind], frame = card.querySelector(`[data-f="${kind}"]`);
+    if (frame.dataset.file !== (file || '')) {
+      frame.dataset.file = file || '';
+      const url = file ? `/media/${p.id}/${file}` : null;
+      frame.replaceChildren(file ? (kind === 'image'
+        ? h('img', { src: url, alt: '', loading: 'lazy', onclick: () => { $('#big img').src = url; $('#big').showModal(); } })
+        : h('video', { src: url, controls: true, loop: true, muted: true, playsinline: true, preload: 'metadata' }))
+        : (kind === 'image' ? 'No picture yet' : 'No video yet'));
+    }
+    const mine = ST.jobs.filter(j => j.project === p.id && j.shot === s.id && j.kind === kind);
+    const run = mine.find(j => j.status === 'running'), wait = mine.find(j => j.status === 'waiting'), last = mine[mine.length - 1];
+    let busy = frame.querySelector('.busy');
+    if (run) {
+      if (!busy) { busy = h('div', { class: 'busy' }, h('span'), h('div', { class: 'progress' }, h('i'))); frame.append(busy); }
+      busy.firstChild.textContent = `${run.phase} · ${about(run.remaining)} left`;
+      busy.querySelector('i').style.width = Math.round((run.progress || 0) * 100) + '%';
+    } else if (busy) busy.remove();
+    const btn = card.querySelector(`[data-make="${kind}"]`), word = kind === 'image' ? 'picture' : 'video';
+    btn.disabled = !!(run || wait);
+    btn.textContent = run ? 'Making…' : wait ? 'In the queue' : file ? 'Redo this ' + word : 'Make just this ' + word;
+    const secs = kind === 'image' ? picSecs(p, s, est) : (fast ? est.video_fast : est.video)[String(s.seconds || 3)];
+    const nref = kind === 'image' ? ((ST.ref_counts || {})[p.id] || {})[s.id] || 0 : 0;
+    card.querySelector(`[data-est="${kind}"]`).textContent = run || wait ? '' : about(secs) + (nref ? `, from ${plural(nref, 'character picture')}` : '');
+    const vers = s[kind + 's'] || [], ver = card.querySelector(`[data-ver="${kind}"]`);
+    ver.style.display = vers.length > 1 ? '' : 'none';
+    ver.children[1].textContent = `${vers.indexOf(file) + 1} of ${vers.length}`;
+    const note = card.querySelector(`[data-note="${kind}"]`);
+    const failed = !run && !wait && last && last.status === 'failed';
+    note.className = 'note' + (failed ? ' bad' : ' dim');
+    note.textContent = failed ? "Didn't work: " + (last.error || 'unknown problem') : wait && !run ? (wait.note || 'Waiting for its turn') : '';
+  }
+}
+$('#big').onclick = () => $('#big').close();
+
+if (location.hash.startsWith('#p=')) view = { page: 'project', pid: location.hash.slice(3), sig: '' };
+window.addEventListener('hashchange', () => { const pid = location.hash.startsWith('#p=') ? location.hash.slice(3) : null; if (pid !== view.pid) { view = { page: pid ? 'project' : 'home', pid, sig: '' }; homeSig = ''; render(); } });
+poll(); setInterval(poll, 2000);
+</script>
+</body>
+</html>

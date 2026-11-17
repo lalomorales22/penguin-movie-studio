@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music gallery · Penguin's Storyboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="gallery">
+
+<div class="appbar">
+  <a class="apptitle" href="/"><i></i>Penguin's Storyboard</a>
+  <nav class="appnav" aria-label="Sections"><a href="/">Movies</a><a href="/music/" class="on">Music</a><a href="/models">Models</a></nav>
+</div>
+<header class="g-top">
+  <div class="decal">LilyKeys</div>
+  <h1>Gallery</h1>
+  <span class="grow"></span>
+  <span id="count" class="status"></span>
+  <a class="btn" href="/music/">Back to the studio</a>
+</header>
+
+<main id="cards" class="cards"></main>
+
+<section id="player" class="player" aria-label="Player" hidden>
+  <div class="felt"></div>
+  <div class="player-in">
+    <button id="pp" class="pp" aria-label="Play"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path id="ppIcon" d="M7 4v16l14-8z" fill="currentColor"/></svg></button>
+    <div class="now">
+      <div id="nowName" class="now-name"></div>
+      <div id="nowTime" class="now-time">0:00</div>
+    </div>
+    <div class="roll-wrap">
+      <canvas id="roll" class="roll"></canvas>
+      <input type="range" id="seek" class="seek" min="0" max="1000" value="0" aria-label="Position in the piece">
+    </div>
+    <label class="check"><input type="checkbox" id="gBeat"> With its beat</label>
+    <a id="nowOpen" class="btn" href="/music/">Open in the studio</a>
+  </div>
+</section>
+
+<script src="instruments.js"></script>
+<script src="audio.js"></script>
+<script src="gallery.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+ "ensembles": {
+  "auto": "",
+  "piano": "Write for solo piano (a PianoStaff, no midiInstrument).",
+  "orchestra": "Write for full symphony orchestra: flute, oboe, clarinet, bassoon; french horns, trumpets, trombone, tuba; timpani; harp; violins I and II, violas, cellos, contrabasses. Use cymbals or bass drum in a DrumStaff only if the music calls for them. Make full use of the colours of the orchestra.",
+  "strings": "Write for string orchestra: violins I, violins II, violas, cellos and contrabasses. Use pizzicato strings or tremolo strings for colour where they suit.",
+  "quartet": "Write for string quartet: violin I, violin II, viola and cello.",
+  "film": "Write a cinematic film-score cue: strings, french horns, trumpets and trombones, woodwinds, timpani, harp, choir aahs, and a piano or celesta for colour, with cymbal swells in a DrumStaff where they help. Build in big, clear dynamic arcs.",
+  "chamber": "Write for wind quintet: flute, oboe, clarinet, french horn and bassoon.",
+  "brass": "Write for brass ensemble: trumpets, french horns, trombones and tuba, with timpani if it suits.",
+  "choir": "Write for choir: soprano, alto, tenor and bass in a ChoirStaff, each with midiInstrument \"choir aahs\" and \\addlyrics words if the user wants words, optionally with organ or piano accompaniment.",
+  "jazz": "Write for a jazz combo: tenor sax or trumpet on the melody, piano comping with jazz voicings, acoustic bass walking, drums in a DrumStaff with ride cymbal (cymr), hi-hat and brushes-style snare. Swing the feel.",
+  "rock": "Write for a rock band: distorted guitar, clean or overdriven rhythm guitar, electric bass (finger), drawbar or rock organ or piano, and drums in a DrumStaff (and a matching ```beat block).",
+  "pop": "Write for a modern pop band: piano or electric piano, synth pad, electric bass, a lead synth or guitar hook, strings for lift in the chorus, and a beat in a ```beat block.",
+  "electronic": "Write electronic music: synth lead, synth pads, synth bass, arpeggiated synth parts, with the groove in a ```beat block.",
+  "lofi": "Write lo-fi hip-hop: electric piano chords with jazzy extensions, a mellow bass, a soft lead (vibraphone, flute or muted guitar), and a dusty swung beat in a ```beat block.",
+  "latin": "Write Latin music: nylon guitar, piano montuno, acoustic bass, trumpet or flute melody, and percussion (cowbell, rim, toms) in a DrumStaff or ```beat block.",
+  "folk": "Write folk / celtic music: fiddle, acoustic guitar (steel), flute or whistle, accordion, and a light bodhran-like pulse.",
+  "world": "Write for a world ensemble chosen to suit the request, from instruments such as sitar, koto, shamisen, kalimba, steel drums, pan flute, shakuhachi, bagpipe and taiko drum."
+ },
+ "text_brief": {
+  "instrumental": "Write it as an instrumental piece, with no lyrics.",
+  "lyrics": "Write it as a song: a singable melody on its own Staff with \\addlyrics words that distil the text's key ideas in your own words (for study notes, make the words accurate and easy to remember), over a PianoStaff accompaniment. Make sure every sung note has a syllable."
+ }
+}

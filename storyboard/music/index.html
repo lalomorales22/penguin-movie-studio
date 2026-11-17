@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music studio · Penguin's Storyboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="appbar">
+  <a class="apptitle" href="/"><i></i>Penguin's Storyboard</a>
+  <nav class="appnav" aria-label="Sections"><a href="/">Movies</a><a href="/music/" class="on">Music</a><a href="/models">Models</a></nav>
+  <span class="grow"></span>
+  <div id="movieBar" class="movie-bar" hidden><span id="movieName"></span><button id="movieUse" class="btn primary tiny">Use this version in the movie</button><a id="movieBack" class="btn tiny" href="/">Back to the movie</a></div>
+</div>
+<div id="setupNote" class="setup-note" role="alert" hidden></div>
+<header class="top">
+  <input id="pieceName" class="piece-name" value="Untitled" aria-label="Piece name" spellcheck="false">
+  <span id="saveState" class="status"></span>
+  <button id="btnNew" class="btn ghost">New piece</button>
+  <a id="toGallery" class="btn" href="/music/gallery">Gallery</a>
+  <span class="grow"></span>
+  <span id="status" class="status" role="status"></span>
+  <label class="check"><input type="checkbox" id="withBeat"> Play the beat along</label>
+  <button id="btnEngrave" class="btn" title="Cmd+Enter">Engrave score</button>
+  <button id="btnPlay" class="btn primary">Play score</button>
+</header>
+
+<main class="work">
+  <section class="pane chat" aria-label="Compose with Claude">
+    <div class="pane-head">
+      <h2>Compose with Claude</h2>
+      <select id="ensemble" class="sel small" aria-label="Instruments Claude writes for" title="Which instruments Claude writes for">
+        <option value="auto">Any instruments</option>
+        <option value="piano">Solo piano</option>
+        <option value="orchestra">Full orchestra</option>
+        <option value="film">Film score</option>
+        <option value="strings">String orchestra</option>
+        <option value="quartet">String quartet</option>
+        <option value="chamber">Wind quintet</option>
+        <option value="brass">Brass ensemble</option>
+        <option value="choir">Choir</option>
+        <option value="jazz">Jazz combo</option>
+        <option value="rock">Rock band</option>
+        <option value="pop">Pop band</option>
+        <option value="electronic">Electronic</option>
+        <option value="lofi">Lo-fi hip-hop</option>
+        <option value="latin">Latin</option>
+        <option value="folk">Folk and celtic</option>
+        <option value="world">World</option>
+      </select>
+      <select id="model" class="sel small" aria-label="Claude model">
+        <option value="">Default model</option>
+        <option value="fable">Fable</option>
+        <option value="opus">Opus</option>
+        <option value="sonnet">Sonnet</option>
+        <option value="haiku">Haiku</option>
+      </select>
+    </div>
+    <div id="msgs" class="msgs"></div>
+    <form id="chatForm" class="chat-form">
+      <textarea id="chatIn" rows="2" placeholder="Describe the music you want, or ask for a change…"></textarea>
+      <div id="fileChip" class="file-chip" hidden><span id="fileName"></span><button type="button" id="fileRemove" class="btn tiny ghost">Remove</button></div>
+      <div class="chat-row">
+        <label class="check" title="Claude reads the text for its ideas and structure and writes music from them"><input type="checkbox" id="textMode"> Turn this text into music</label>
+        <select id="textStyle" class="sel small" aria-label="Kind of music" hidden>
+          <option value="instrumental">as an instrumental piece</option>
+          <option value="lyrics">as a song with lyrics</option>
+        </select>
+      </div>
+      <div class="chat-row">
+        <button type="button" id="attachBtn" class="btn ghost">Attach a text file</button>
+        <input type="file" id="fileIn" accept=".txt,.md,.markdown,text/plain,text/markdown" hidden>
+        <span class="grow"></span>
+        <button class="btn primary" id="chatSend">Send to Claude</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="pane code" aria-label="LilyPond code">
+    <div class="pane-head">
+      <h2>LilyPond code</h2>
+      <label class="check" title="Each key you press is typed into the code at the cursor"><input type="checkbox" id="stepMode"> Keys write notes</label>
+      <select id="stepDur" class="sel small" aria-label="Note length for written notes">
+        <option value="1">whole</option><option value="2">half</option><option value="4" selected>quarter</option><option value="8">eighth</option><option value="16">sixteenth</option>
+      </select>
+    </div>
+    <textarea id="ly" class="editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+    <pre id="log" class="log" hidden></pre>
+  </section>
+
+  <section class="pane sheet" aria-label="Engraved score">
+    <div class="pane-head">
+      <h2>Score</h2>
+      <span class="grow"></span>
+      <a id="dlPdf" class="dl" hidden>Download PDF</a>
+      <a id="dlAudio" class="dl" href="#" hidden title="An audio file of the piece as it plays here">Audio</a>
+      <a id="dlMidi" class="dl" hidden>MIDI</a>
+      <a id="dlLy" class="dl">LilyPond file</a>
+    </div>
+    <div id="pages" class="pages"><p class="empty">Engrave the score to see it here.</p></div>
+  </section>
+</main>
+
+<section class="beat" id="beat" aria-label="Beat machine">
+  <div class="beat-ctl">
+    <div class="tabs" role="tablist">
+      <button id="tabBeat" class="tab on" role="tab" aria-selected="true">Beat machine</button>
+      <button id="tabDesk" class="tab" role="tab" aria-selected="false">Sound desk</button>
+    </div>
+    <button id="beatPlay" class="btn primary">Play beat</button>
+    <label class="field" title="Sets the speed of the beat and of score playback">Tempo <input type="number" id="tempo" min="40" max="220" value="92"> <span class="unit">bpm</span></label>
+    <label class="field">Swing <input type="range" id="swing" min="0" max="60" value="0"></label>
+    <label class="field">Kit <select id="kit" class="sel small"></select></label>
+    <label class="field">Groove <select id="groove" class="sel small"><option value="">Load a groove…</option></select></label>
+    <label class="field">Length <select id="bars" class="sel small">
+      <option value="1">1 bar (16 steps)</option><option value="2">2 bars (32)</option><option value="4">4 bars (64)</option><option value="8">8 bars (128)</option>
+    </select></label>
+    <button id="beatFold" class="btn ghost fold" aria-expanded="true">Hide this panel</button>
+  </div>
+  <div id="beatView">
+    <div class="barrow">
+      <span class="field">Bar</span>
+      <div id="barTabs" class="bar-tabs"></div>
+      <button id="barCopy" class="btn tiny">Copy this bar to the next</button>
+      <button id="barClear" class="btn tiny ghost">Clear this bar</button>
+      <button id="beatClear" class="btn tiny ghost">Clear every bar</button>
+      <label class="check"><input type="checkbox" id="follow" checked> Follow playback</label>
+      <span class="grow"></span>
+      <span class="hint">Click a step for a hit. Shift-click for an accent, Option-click for a soft ghost note.</span>
+    </div>
+    <div id="grid" class="grid"></div>
+  </div>
+  <div id="desk" class="desk" hidden></div>
+</section>
+
+<section class="piano" aria-label="Piano">
+  <div class="fallboard">
+    <div class="decal">LilyKeys</div>
+    <label class="field">Sound <select id="sound" class="sel small"></select></label>
+    <div class="field">Octave <button id="octDown" class="btn tiny" aria-label="Octave down">−</button><span id="octLabel" class="oct">C4</span><button id="octUp" class="btn tiny" aria-label="Octave up">+</button></div>
+    <label class="field">Volume <input type="range" id="volume" min="0" max="100" value="80"></label>
+    <label class="check" title="Or hold the space bar"><input type="checkbox" id="sustain"> Sustain</label>
+    <span class="grow"></span>
+    <span id="midiStatus" class="status"></span>
+    <button id="btnRec" class="btn">Record a take</button>
+  </div>
+  <div class="felt"></div>
+  <div id="keys" class="keys"></div>
+</section>
+
+<script src="instruments.js"></script>
+<script src="audio.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

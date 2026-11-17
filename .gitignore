@@ -1,0 +1,28 @@
+# The engine and its models are installed by setup.command and the Models page, never committed
+ComfyUI/
+MODELS/
+*.safetensors
+*.gguf
+*.sft
+*.ckpt
+
+# Your own work stays on your computer: projects, movies, music, downloaded sounds, settings
+storyboard/data/
+
+# Older copies kept while the app was being built
+storyboard/previous_version*/
+
+# LilyKeys has a repository of its own; its studio now also lives in storyboard/music
+lilykeys/
+
+# Python, logs, clutter
+__pycache__/
+*.pyc
+.venv/
+*.log
+nohup.out
+.DS_Store
+._*
+.claude/
+.vscode/
+.idea/
