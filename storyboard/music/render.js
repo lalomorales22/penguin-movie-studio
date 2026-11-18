@@ -3,7 +3,7 @@
 // OfflineAudioContext, which runs much faster than real time, and sends back a WAV.
 const RENDER_TRACKS = ['kick', 'snare', 'hat', 'openhat', 'clap', 'tom', 'rim', 'cowbell'];
 const RENDER_CODES = { '.': 0, x: 1, X: 2, o: 3 };
-const RENDER_DESK = { bright: 18000, reso: 0.7, kdrive: 0, chorus: 0, echo: 0, fb: 0.35, room: 0.2, dlevel: 0.9, dtone: 18000, ddrive: 0, dtune: 0, droom: 0, decho: 0 };
+const RENDER_DESK = { bright: 18000, reso: 0.7, kdrive: 0, chorus: 0, echo: 0, fb: 0.35, room: 0.2, dlevel: 0.9, dtone: 18000, ddrive: 0, dtune: 0, droom: 0, decho: 0, film: 1 };
 
 function readBeat(b) {
   b = b || {};
@@ -15,11 +15,12 @@ function readBeat(b) {
   return { bars, tracks, swing: +b.swing || 0, kit: b.kit || '808', tempo: +b.tempo || 0, any: RENDER_TRACKS.some(k => tracks[k].some(Boolean)) };
 }
 
-// spec: { midi (base64), beat, desk, sound, withBeat, scoreBpm, seconds, rate, tail }, as music.py's piece_spec builds it.
+// spec: { midi (base64), perf, beat, desk, sound, withBeat, film, withFilm, scoreBpm, seconds, rate, tail }, as music.py's
+// piece_spec builds it. perf is how the score wants to be played; film is the layer of film sounds.
 async function renderPiece(spec) {
   const SR = 44100, LEAD = 0.05;
   const bytes = Uint8Array.from(atob(spec.midi), c => c.charCodeAt(0));
-  const song = makeSound(new OfflineAudioContext(2, 1, SR), false).parseMidi(bytes.buffer);
+  const song = makeSound(new OfflineAudioContext(2, 1, SR), false).parseMidi(bytes.buffer, spec.perf);
   if (!song.notes.length) throw new Error('This piece has no notes to play.');
   const beat = readBeat(spec.beat), written = Math.round(song.bpm);
   // Same rule as the gallery player: the Tempo box sets the speed once the piece has a tempo of its own there.
@@ -36,13 +37,15 @@ async function renderPiece(spec) {
   for (const k of RENDER_TRACKS) if (desk['mix_' + k] == null) desk['mix_' + k] = 1;
   for (const [k, v] of Object.entries(desk)) if (k !== 'echoTime' && typeof v === 'number') S.setDesk(k, v);
   S.setDesk('echoTime', (+desk.echoTime || 0.75) * 60 / tempo);
+  const film = spec.withFilm === false ? null : spec.film || null;
+  S.setSpace(desk.space || (film && film.space) || 'hall');
 
   // Everything that has to be loaded before the clock starts: the piano, and each instrument's notes.
   const usesKeys = song.notes.some(n => n.ch !== 9 && !(n.prog > 0));
   const piano = usesKeys && sound === 'grand' ? await S.loadPiano() : true;
-  const sampled = await S.prepare(song);
+  const sampled = await S.prepare(song, film);
 
-  S.schedule(song, { rate, at: LEAD });
+  const filmSounds = S.schedule(song, { rate, at: LEAD, film });
   const withBeat = !!spec.withBeat && beat.any;
   if (withBeat) S.scheduleBeat(beat, tempo, LEAD, musicEnd);
   const out = await AC.startRendering();
@@ -51,7 +54,7 @@ async function renderPiece(spec) {
   const L = out.getChannelData(0), R = out.getChannelData(1);
   let peak = 0;
   for (let i = 0; i < L.length; i++) { const a = Math.abs(L[i]), b = Math.abs(R[i]); if (a > peak) peak = a; if (b > peak) peak = b; }
-  const gain = peak > 0.98 ? 0.98 / peak : 1;
+  const gain = peak > 0.94 ? 0.94 / peak : 1;   // a little room above the loudest sample, for what lies between samples
   const wav = new DataView(new ArrayBuffer(44 + L.length * 4));
   const text = (at, s) => { for (let i = 0; i < s.length; i++) wav.setUint8(at + i, s.charCodeAt(i)); };
   text(0, 'RIFF'); wav.setUint32(4, 36 + L.length * 4, true); text(8, 'WAVEfmt ');
@@ -67,6 +70,7 @@ async function renderPiece(spec) {
     info: {
       seconds: +seconds.toFixed(3), music: +(song.total / rate).toFixed(3), rate: +rate.toFixed(5), tempo: +tempo.toFixed(2),
       written, notes: song.notes.length, instruments: song.parts.map(([p]) => p), sampled: !!sampled, piano: !!piano, withBeat, peak: +peak.toFixed(4),
+      dynamics: song.dyn ? Object.keys(song.dyn).length : 0, film: filmSounds,
     },
   };
 }

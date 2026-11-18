@@ -260,7 +260,7 @@ function modelSelect(id, cur, onchange) {
   const ms = ST.text_models || [];
   return h('select', { id, title: 'Which Ollama model writes the script', onchange },
     ms.length ? ms.map(m => h('option', { value: m.name, selected: m.name === cur }, m.name + (m.online ? ' (online)' : ` · ${m.gb} GB`)))
-              : h('option', { value: '' }, ST.ollama === 'missing' ? 'Ollama is not installed' : 'Looking for Ollama…'));
+              : h('option', { value: '' }, ST.ollama === 'missing' ? 'Ollama is not installed' : ST.ollama === 'up' ? 'No writing model yet' : 'Looking for Ollama…'));
 }
 
 async function poll() {
@@ -406,10 +406,20 @@ function renderHome() {
         h('button', { class: 'primary big', disabled: noWriter, onclick: () => start(true) }, 'Begin: make the whole movie'),
         h('button', { disabled: noWriter, onclick: () => start(false) }, 'Just write the script first'),
         h('span', { class: 'dim', style: 'font-size:13.5px' }, 'Script written by'), modelSelect('imodel', draft.model, e => { draft.model = e.target.value; })),
-      noWriter && h('div', { class: 'dim', style: 'margin-top:8px;font-size:13.5px' }, ST.ollama === 'missing' ? 'The script writer needs Ollama (ollama.com). Without it you can still make an empty project and write the shots yourself.' : 'Looking for Ollama’s writing models…')),
+      noWriter && h('div', { class: 'dim', style: 'margin-top:8px;font-size:13.5px' },
+        ST.ollama === 'missing' ? 'The script writer needs Ollama. Double-click setup.command in the app’s folder to install it. Without it you can still make an empty project and write the shots yourself.'
+        : ST.ollama === 'up' ? ['There is no writing model on this computer yet. ', h('a', { href: '/models' }, 'Open Models'), ' and download the Script writer. Without it you can still make an empty project and write the shots yourself.']
+        : 'Looking for Ollama’s writing models…')),
     h('h3', { class: 'sec' }, 'Your projects'),
     h('div', { class: 'grid' }, cards, h('div', { class: 'pcard new', onclick: openNew }, '+ Empty project')));
-  if (todo) $('#main').prepend(todo);
+  // The video kit is here but the fast add-on is not: videos work, the slow way. Say so once, with the way out.
+  const kits = ST.kits || {};
+  const slow = !todo && kits.video === 'ready' && kits.fast && kits.fast !== 'ready' ? h('div', { class: 'banner todo' },
+    kits.fast === 'needs_finish' ? 'Fast video has one step left. Until it is finished, videos need far more memory and are slower than they have to be.'
+      : kits.fast === 'downloading' ? 'Fast video is on its way. Until it is ready every video takes about three times longer.'
+      : 'Videos are made the slow way until the Fast video kit is here: about three times longer each.',
+    h('a', { href: '/models' }, 'Open Models')) : null;
+  if (todo || slow) $('#main').prepend(todo || slow);
 }
 let nk = 'story', nsh = 'wide';
 function openNew() {
@@ -447,7 +457,7 @@ function leftToMake(p, est, fast) {
 
 function renderProject(p) {
   const unit = ST.kinds[p.kind].unit;
-  const sig = [p.id, p.kind, ST.turbo, ST.refs, p.refs !== false, p.writing || '', p.script_error || '', p.movie || '', (p.cast || []).map(c => c.id).join(','), (ST.text_models || []).length, p.shots.map(s => s.id).join(',')].join('|');
+  const sig = [p.id, p.kind, ST.turbo, ST.refs, p.refs !== false, p.writing || '', p.script_error || '', p.begin_error || '', p.movie || '', (p.cast || []).map(c => c.id).join(','), (ST.text_models || []).length, p.shots.map(s => s.id).join(',')].join('|');
   if (sig !== view.sig) { view.sig = sig; buildProject(p, unit); }
   const root = $('#proj'); root.style.setProperty('--ar', AR[p.shape]);
   setIfIdle($('#pname'), p.name); setIfIdle($('#pstyle'), p.style || ''); setIfIdle($('#pshape'), p.shape); setIfIdle($('#pidea'), p.idea || '');
@@ -478,7 +488,8 @@ function buildProject(p, unit) {
   const pics = ST.refs && p.refs !== false, cbase = c => `/api/project/${p.id}/cast/${c.id}`;
   const banner = p.writing ? h('div', { class: 'banner busy' }, h('span', { class: 'spin' }),
       p.writing === 'waiting' ? 'Waiting for the job in progress to finish, then I write the script…' : 'Writing the script… this usually takes a minute or two.')
-    : p.script_error ? h('div', { class: 'banner err' }, 'The script could not be written: ' + p.script_error) : null;
+    : p.script_error ? h('div', { class: 'banner err' }, 'The script could not be written: ' + p.script_error)
+    : p.begin_error ? h('div', { class: 'banner err' }, 'The script is written, but the movie was not started: ' + p.begin_error) : null;
   const final = p.movie ? h('div', { class: 'final' },
     h('div', { class: 'row' }, 'Your finished movie', h('button', { class: 'small', onclick: () => act(`/api/project/${p.id}/reveal`) }, 'Show the files')),
     h('video', { src: `/movie/${p.id}/${p.movie}`, controls: true, playsinline: true, preload: 'metadata' })) : null;
@@ -554,6 +565,17 @@ function buildProject(p, unit) {
         h('button', { class: 'small ghost', onclick: () => $('#musicfile').click() }, 'Use my own music file')),
       h('input', { type: 'text', id: 'mnote', maxlength: 300, placeholder: 'What should it feel like? For example: tense, a slow build, a hopeful ending (optional)', value: (p.music || {}).note || '', oninput: e => saveLater('mn', `/api/project/${p.id}`, () => ({ music: { note: e.target.value } })) }),
       h('div', { class: 'dim', id: 'mhint', style: 'font-size:12.5px;margin-top:5px' }),
+      h('div', { class: 'mrow', style: 'margin-top:12px' },
+        h('label', { class: 'chk', style: 'margin:0' },
+          h('input', { type: 'checkbox', id: 'son', checked: !!(p.sounds || {}).on, onchange: e => act(`/api/project/${p.id}`, { sounds: { on: e.target.checked } }) }),
+          'Add the sounds of each shot (footsteps, rain, traffic) when I press Begin'),
+        h('select', { id: 'slevel', title: 'How loud the sounds are next to the music', onchange: e => act(`/api/project/${p.id}`, { sounds: { level: e.target.value } }) },
+          ['quiet', 'medium', 'loud'].map(k => h('option', { value: k, selected: k === ((p.sounds || {}).level || 'medium') }, k))),
+        h('button', { class: 'small', id: 'smake', onclick: async () => {
+          const r = await act(`/api/project/${p.id}/sounds/make`);
+          if (r) toast(ST.settings.mode === 'paused' ? 'Lined up, but the queue is paused. Choose Go now or Night mode at the top.' : 'On it. Each shot gets its sounds, then the movie is put together again with them.');
+        } }, 'Make the sounds now')),
+      h('div', { class: 'dim', id: 'shint', style: 'font-size:12.5px;margin-top:5px' }),
       h('input', { type: 'file', id: 'musicfile', accept: 'audio/*,.mp3,.m4a,.wav,.aac,.flac,.ogg', style: 'display:none', onchange: e => uploadMusic(p.id, e.target) })));
   const shots = p.shots.map((s, i) => buildShot(p, s, i, unit));
   $('#main').replaceChildren(h('div', { id: 'proj' },
@@ -618,30 +640,48 @@ function patchMusic(p) {
   const sig = [p.soundtrack || '', m.current || '', m.piece || '', m.title || '', p.soundtrack_name || '', stale].join('|');
   if (box.dataset.sig !== sig) {
     box.dataset.sig = sig;
-    const written = m.current === 'piece' && m.piece;
+    const written = m.current === 'piece' && m.piece, sung = m.current === 'song';
     box.replaceChildren(...(p.soundtrack ? [
-      h('div', { class: 'mname' }, written ? `“${m.title || p.soundtrack_name}”, written for this movie` : (p.soundtrack_name || 'Your own music')),
+      h('div', { class: 'mname' }, written ? `“${m.title || p.soundtrack_name}”, written for this movie` : sung ? `“${m.title || p.soundtrack_name}”, a song made for this movie` : (p.soundtrack_name || 'Your own music')),
       h('audio', { controls: true, preload: 'none', src: `/media/${p.id}/${p.soundtrack}` }),
       h('div', { class: 'actions', style: 'margin-top:6px' },
         written && h('a', { class: 'btnlink', href: `/music/?piece=${m.piece}`, title: 'See the score, change it by hand or with Claude, then send it back' }, 'Open in the Music studio'),
         stale && h('button', { class: 'small', onclick: () => act(`/api/project/${p.id}/music/use`, {}) }, 'The score was changed in the studio: update the movie'),
         h('button', { class: 'small ghost', onclick: () => act(`/api/project/${p.id}/remove_soundtrack`) }, 'Remove the music')),
-      written && m.brief ? h('details', {}, h('summary', {}, 'See exactly what was sent to Claude to write it'), h('pre', {}, m.brief)) : ''
+      written && m.brief ? h('details', {}, h('summary', {}, 'See exactly what was sent to Claude to write it'), h('pre', {}, m.brief)) : '',
+      sung && m.words ? h('details', {}, h('summary', {}, 'See the words and the description the song was made from'), h('pre', {}, (m.sound ? m.sound + '\n\n' : '') + m.words)) : ''
     ] : [h('div', { class: 'dim' }, 'None yet.')]));
   }
   const on = $('#mon'); if (document.activeElement !== on) on.checked = !!m.on;
   setIfIdle($('#mstyle'), m.style || 'film'); setIfIdle($('#mnote'), m.note || '');
   const btn = $('#mmake');
-  btn.disabled = !!(run || wait) || !!p.writing || ST.music.ready === false || !p.shots.some(s => (s.text || '').trim());
-  btn.textContent = run ? 'Writing the music…' : wait ? 'In the queue' : p.soundtrack ? 'Write new music' : 'Write the music now';
+  const song = (m.style || 'film') === 'song', cannot = song ? !ST.songs : ST.music.ready === false;
+  btn.disabled = !!(run || wait) || !!p.writing || cannot || !p.shots.some(s => (s.text || '').trim());
+  btn.textContent = run ? (song ? 'Making the song…' : 'Writing the music…') : wait ? 'In the queue' : song ? (p.soundtrack ? 'Make a new song' : 'Make the song now') : p.soundtrack ? 'Write new music' : 'Write the music now';
   const failed = !run && !wait && last && last.status === 'failed', hint = $('#mhint');
   hint.className = failed ? 'bad' : 'dim';
   const total = p.shots.reduce((a, s) => a + ((s.text || '').trim() ? (s.seconds || 5) : 0), 0);
   const misfit = m.current === 'piece' && p.soundtrack && m.target && Math.abs(m.target - total) > 0.5;
   hint.textContent = run ? `${run.phase} · ${about(run.remaining)} left` : failed ? "Didn't work: " + (last.error || 'unknown problem')
     : misfit ? `The shots now add up to ${total} seconds, and this music was written for ${Math.round(m.target)}. It will be faded out or followed by silence; "Write new music" makes it fit again.`
+    : song ? (ST.songs ? 'The words are written and the song is sung on this computer. Nothing is sent online. Say above what it should sound like.' : 'A song needs the Songs kit. Open Models to download it (10 GB).')
     : ST.music.ready === false ? ST.music.why
     : 'Claude writes the music online, to the length of the shots. Only the mood and the timings are sent, never your script.';
+  // The sounds of the shots.
+  const so = p.sounds || {}, sjobs = ST.jobs.filter(j => j.project === p.id && j.kind === 'sfx');
+  const srun = sjobs.find(j => j.status === 'running'), swait = sjobs.filter(j => j.status === 'waiting').length, sfail = sjobs.filter(j => j.status === 'failed').pop();
+  const son = $('#son'); if (document.activeElement !== son) son.checked = !!so.on;
+  son.disabled = !ST.sounds; setIfIdle($('#slevel'), so.level || 'medium');
+  const have = p.shots.filter(s => s.sfx).length, all = p.shots.filter(s => (s.text || '').trim()).length;
+  $('#smake').disabled = !ST.sounds || !!(srun || swait) || !all || have >= all;
+  const shint = $('#shint');
+  shint.className = !srun && !swait && sfail ? 'bad' : 'dim';
+  shint.textContent = !ST.sounds ? 'The sounds need the Sound effects kit. Open Models to download it (3.5 GB).'
+    : srun ? `${srun.phase || 'Making the sounds'} · ${swait} more waiting`
+    : swait ? `${swait} waiting in the queue`
+    : sfail ? "Didn't work: " + (sfail.error || 'unknown problem')
+    : have ? `${have} of ${all} shots have their sounds. They are made on this computer and mixed under the music.`
+    : 'Made on this computer from a few words about each shot, and mixed under the music.';
 }
 async function uploadMusic(pid, input) {
   const f = input.files[0]; if (!f) return;
@@ -675,6 +715,12 @@ function buildShot(p, s, i, unit) {
       (p.cast || []).length > 0 && h('input', { type: 'text', style: 'width:100%', maxlength: 400, 'data-t': 'who', placeholder: (p.cast || []).map(c => c.name).filter(Boolean).join(', '), value: (s.who || []).join(', '), oninput: e => saveLater(s.id + 'w', base, { who: e.target.value }) }),
       h('label', { class: 'lbl' }, 'The video: what moves, and how does the camera move?'),
       h('textarea', { rows: 2, maxlength: 1000, 'data-t': 'motion', placeholder: 'Pip tilts his head as the seagulls circle; the camera slowly pushes in', oninput: e => saveLater(s.id + 'm', base, { motion: e.target.value }) }, s.motion || ''),
+      h('div', { 'data-srow': '1', hidden: true },
+        h('label', { class: 'lbl' }, 'The sounds: what do we hear? (leave it empty and it is worked out for you)'),
+        h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
+          h('input', { type: 'text', style: 'flex:1;min-width:220px', maxlength: 240, 'data-t': 'sound', placeholder: 'slow footsteps on wet cobblestones, light rain, a car far away', value: s.sound || '', oninput: e => saveLater(s.id + 's', base, { sound: e.target.value }) }),
+          h('button', { class: 'small', 'data-smake': '1', title: 'Make the sounds of this one (again)', onclick: () => act(base + '/make', { what: 'sound' }) }, 'Make'),
+          h('audio', { 'data-sfx': '1', controls: true, preload: 'none', style: 'height:30px;max-width:230px', hidden: true }))),
       h('label', { class: 'lbl' }, 'Narration (optional, used in the storybook)'),
       h('textarea', { rows: 2, maxlength: 4000, 'data-t': 'caption', placeholder: 'Pip had always wondered what the sky felt like.', oninput: e => saveLater(s.id + 'c', base, { caption: e.target.value }) }, s.caption || ''),
       h('div', { class: 'opts' },
@@ -686,7 +732,12 @@ function buildShot(p, s, i, unit) {
 
 function patchShot(p, s, i, est, fast) {
   const card = document.querySelector(`[data-shot="${s.id}"]`); if (!card) return;
-  for (const k of ['text', 'motion', 'caption']) setIfIdle(card.querySelector(`[data-t="${k}"]`), s[k] || '');
+  for (const k of ['text', 'motion', 'caption', 'sound']) setIfIdle(card.querySelector(`[data-t="${k}"]`), s[k] || '');
+  // What is heard: shown once the sounds can be made here, or have been.
+  const srow = card.querySelector('[data-srow]'), player = card.querySelector('[data-sfx]');
+  srow.hidden = !(ST.sounds || s.sfx);
+  card.querySelector('[data-smake]').disabled = !ST.sounds || !(s.text || '').trim() || ST.jobs.some(j => j.project === p.id && j.shot === s.id && j.kind === 'sfx' && (j.status === 'waiting' || j.status === 'running'));
+  if (player.dataset.file !== (s.sfx || '')) { player.dataset.file = s.sfx || ''; player.hidden = !s.sfx; if (s.sfx) player.src = `/media/${p.id}/${s.sfx}`; else player.removeAttribute('src'); }
   const who = card.querySelector('[data-t="who"]');
   if (who && document.activeElement !== who && who.value.split(',').map(x => x.trim()).filter(Boolean).join(', ') !== (s.who || []).join(', ')) who.value = (s.who || []).join(', ');
   setIfIdle(card.querySelector('[data-t="seconds"]'), String(s.seconds || 3));

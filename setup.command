@@ -41,7 +41,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
   if [ "$mem_gb" -ge 24 ]; then ok "$mem_gb GB of memory"; else warn "$mem_gb GB of memory. The video model wants 24 GB or more; expect it to be slow or to fail."; fi
 fi
 free_gb=$(df -g . | awk 'NR==2 {print $4}')
-if [ "${free_gb:-0}" -ge 70 ]; then ok "$free_gb GB of free disk space"; else warn "${free_gb:-?} GB of free disk space. The models need about 55 GB and the engine about 5 GB."; fi
+if [ "${free_gb:-0}" -ge 70 ]; then ok "$free_gb GB of free disk space"; else warn "${free_gb:-?} GB of free disk space. A complete install takes about 55 GB (models 43, writing model 7, engine and tools 5)."; fi
 
 # --- Homebrew (macOS package manager) --------------------------------------------------------
 if ! have brew; then

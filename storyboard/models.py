@@ -39,6 +39,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+import percussion  # the recorded drums and percussion: a kit that fetches and cuts its own recordings
+
 HERE = Path(__file__).resolve().parent
 COMFY_DIR = Path(os.environ.get("COMFY_DIR", HERE.parent / "ComfyUI")).resolve()
 DATA = Path(os.environ.get("STORYBOARD_DATA", HERE / "data")).resolve()
@@ -151,9 +153,43 @@ KITS = [
     {"id": "writer", "kind": "ollama", "title": "Script writer (Ollama)",
      "about": "Writes the script, the characters and every shot from your idea. It runs on this computer.",
      "suggest": {"model": "qwen3.5:9b", "bytes": 6600000000}},
-    {"id": "sounds", "kind": "sounds", "title": "Music sounds (orchestra and band)",
-     "about": "The instrument recordings the Music section plays, and puts under your movies.",
-     "wanted": 58},
+    {"id": "sounds", "kind": "sounds", "title": "Music sounds (128 instruments)",
+     "about": "The instrument recordings the Music section plays, and puts under your movies: the orchestra, "
+              "the band, keyboards, synths and pads, and instruments from around the world.",
+     "wanted": 128},
+    # The kits below are extras: nothing else in the app needs them, so the Movies page never asks for them.
+    {"id": "percussion", "kind": "percussion", "optional": True, "title": "Recorded drums and percussion",
+     "about": "Real drums for the Music section in place of the ones it makes itself: seven drum kits, an orchestra's "
+              "percussion (bass drum, snare, cymbals, tam-tam, triangle), hand percussion, and recorded film sounds "
+              "(gong, cymbal swell, big drum, wind chimes).",
+     "bytes": percussion.TOTAL,
+     "sources": [{"what": "The drum kits of FluidR3 Mono GM, the sound set of MuseScore 3", "from": percussion.LIST["fluid"]["from"],
+                  "bytes": percussion.LIST["fluid"]["bytes"], "licence": "MIT"},
+                 {"what": "%d recordings of orchestral and hand percussion: VSCO 2 Community Edition, Versilian Studios"
+                          % len(percussion.LIST["vsco"]["files"]), "from": percussion.LIST["vsco"]["from"],
+                  "bytes": sum(percussion.LIST["vsco"]["files"].values()), "licence": "CC0, public domain"}]},
+    {"id": "songs", "kind": "files", "optional": True, "title": "Songs with singing (ACE-Step 1.5)",
+     "about": "Makes a whole song with a sung voice from a description and words. "
+              "An extra: only movie music of the kind \"a song with singing\" uses it.",
+     "repo": "Comfy-Org/ace_step_1.5_ComfyUI_files",
+     "files": [
+         {"path": "checkpoints/ace_step_1.5_turbo_aio.safetensors", "folder": "checkpoints",
+          "bytes": 10025478736, "what": "the song model, its prompt readers and its finisher in one file"},
+     ],
+     "licence": {"name": "apache-2.0", "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files", "note": ""}},
+    {"id": "effects", "kind": "files", "optional": True, "title": "Sound effects (Stable Audio 3 small)",
+     "about": "Makes the sounds of each shot (footsteps, rain, traffic, wind) to lay under the music. An extra.",
+     "repo": "Comfy-Org/stable-audio-3",
+     "files": [
+         {"path": "checkpoints/stable_audio_3_small_sfx.safetensors", "folder": "checkpoints",
+          "bytes": 2270384940, "what": "the sound-effects model"},
+         {"path": "text_encoders/t5gemma_b_b_ul2.safetensors", "folder": "text_encoders",
+          "bytes": 1187264003, "what": "reads your words"},
+     ],
+     "licence": {"name": "Stability AI Community License", "url": "https://stability.ai/community-license",
+                 "note": "Free for personal and hobby use. If you earn money with what it makes, you must register "
+                         "with Stability AI (free below 1 million US dollars of revenue a year). Downloading and "
+                         "using these files means you accept that licence. Powered by Stability AI."}},
 ]
 KIT = {k["id"]: k for k in KITS}
 
@@ -201,6 +237,9 @@ def _kit_state(kit, snap, block=False):
     if kind == "sounds":
         n = _sounds_have()
         return "ready" if n >= kit["wanted"] else "partial" if n else "missing"
+    if kind == "percussion":
+        s = percussion.status()["state"]
+        return "downloading" if s in ("fetching", "building") else s if s in ("ready", "partial") else "missing"
     if kind == "ollama":
         if live:
             return "downloading"
@@ -223,6 +262,12 @@ def _kit_state(kit, snap, block=False):
     return "partial" if any(f["have"] for f in files) else "missing"
 
 
+def kit_ready(kit_id):
+    """Is every file of this kit on this computer?"""
+    kit = KIT.get(kit_id)
+    return bool(kit) and bool(kit.get("files")) and all(f["have"] for f in _kit_files(kit))
+
+
 def kit_view(kit, snap):
     """Everything one kit card on the page shows."""
     live, last = _kit_job(kit["id"], snap)
@@ -237,6 +282,8 @@ def kit_view(kit, snap):
                        else "Not installed yet. Double-click setup.command in the app's folder.")
     elif kind == "sounds":
         v.update(have=_sounds_have(), wanted=kit["wanted"])
+    elif kind == "percussion":
+        v.update(perc=percussion.status(), bytes=kit["bytes"], sources=kit["sources"])
     elif kind == "ollama":
         v["writer"] = writer_status()
         v["suggest"] = kit["suggest"]
@@ -408,6 +455,28 @@ def vision_reader():
     if s["default"] in found:
         return s["default"]
     return found[0] if found else ""
+
+
+# What each kind of job loads, the words for it, and the kit that brings it.
+JOB_NEEDS = {
+    "picture": (("picture_model", "picture_reader", "picture_vae"), "picture model", "pictures"),
+    "video": (("video_model", "video_reader", "video_vae"), "video model", "video"),
+}
+
+
+def why_not(job, model=True):
+    """Why a "picture" or a "video" cannot be made on this computer yet, as one sentence for the
+    person. "" when every file that job loads is here. model=False leaves the model itself out of
+    the check (fast video brings its own) and looks only at the prompt reader and the finisher."""
+    slots, thing, kit_id = JOB_NEEDS[job]
+    if all((COMFY_MODELS / SLOT[n]["folder"] / slot(n)).is_file() for n in (slots if model else slots[1:])):
+        return ""
+    with jobs_lock:
+        coming = any(j["kit"] == kit_id and j["state"] in ("queued", "running") for j in jobs)
+    if coming:
+        return f"The {thing} is still downloading. Open Models to see how far it is, then try again."
+    kit = KIT[kit_id]["title"].split(" (")[0]
+    return f"The {thing} is not on this computer yet. Open Models and download the {kit} kit."
 
 
 def slots_view():

@@ -104,7 +104,17 @@ KINDS = {
 START_FROM = ("picture", "previous", "text")
 # Music for a movie: the instrument line-ups the composer can be asked for (music.py knows what each one means).
 MUSIC_STYLES = ("film", "orchestra", "strings", "quartet", "piano", "chamber", "brass", "choir", "jazz", "rock", "pop",
-                "electronic", "lofi", "latin", "folk", "world", "auto")
+                "electronic", "lofi", "latin", "folk", "world", "auto", "song")
+# Two extras that make sound itself instead of a score, each with a kit of its own on the Models page: a whole song
+# with a sung voice (ACE-Step 1.5) and the sounds of each shot (Stable Audio 3). Both run on this computer.
+SONG_MODEL = "ace_step_1.5_turbo_aio.safetensors"
+SONG_KEYS = [f"{root} {mode}" for mode in ("major", "minor")
+             for root in ("C", "C#", "Db", "D", "D#", "Eb", "E", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B")]
+SFX_MODEL, SFX_READER = "stable_audio_3_small_sfx.safetensors", "t5gemma_b_b_ul2.safetensors"
+SFX_MAX = 20  # seconds: the longest sound made in one go; a longer shot is quiet after that
+SOUND_LEVELS = {"quiet": 0.4, "medium": 0.8, "loud": 1.5}   # against shot sounds brought to -24 LUFS: about 16, 10 and 4.5 dB under the music
+NO_SONGS = "The song maker is not on this computer yet. Open Models and download the Songs kit."
+NO_SOUNDS = "The sound-effects maker is not on this computer yet. Open Models and download the Sound effects kit."
 KIND_WORDS = {"story": "story film", "book": "picture-book film", "commercial": "commercial", "movie": "film",
               "music": "music video", "other": "film"}
 AUDIO_EXT = (".mp3", ".m4a", ".wav", ".aac", ".flac", ".ogg")
@@ -151,6 +161,7 @@ def log(*a):
 
 music.log = log
 models.hooks["log"] = log
+music.percussion.hooks["log"] = log
 
 def new_id(prefix):
     return prefix + uuid.uuid4().hex[:8]
@@ -296,6 +307,24 @@ def refs_available():
     return bool(models.vision_reader())
 
 
+NO_REFS = ("Character pictures need the prompt reader that comes with the Pictures kit. "
+           "Open Models and download the Pictures kit.")
+
+
+def need_models(*kinds):
+    """Stop here, with a sentence for the person, when the model files a "picture" or a "video"
+    needs are not on this computer yet (a new install, before the kits are downloaded)."""
+    for kind in kinds:
+        why = why_no(kind)
+        if why:
+            raise ValueError(why)
+
+
+def why_no(kind):
+    """The sentence need_models() stops with, or "". The finished fast video model stands in for the video model."""
+    return models.why_not(kind, model=not (kind == "video" and turbo_kind() == "merged"))
+
+
 def uses_refs(p):
     """Character pictures are on for every project unless they were switched off in it."""
     return (p or {}).get("refs", True) is not False and refs_available()
@@ -390,7 +419,9 @@ def calib_key(job):
     if job["kind"] == "movie":
         return None
     if job["kind"] == "music":
-        return "music" if job.get("compose", True) else None
+        return "music" if job.get("compose", True) and not job.get("song") else None
+    if job["kind"] == "sfx":
+        return None
     return "video_fast" if job_params(job)[2] else "video"
 
 
@@ -421,7 +452,11 @@ def estimate_job(job):
             return 25
         p = P.get(job["project"]) or {}
         movie = sum(int(x.get("seconds", 3)) for x in p.get("shots", []) if (x.get("text") or "").strip())
+        if (p.get("music") or {}).get("style") == "song":  # measured on an M4: a 15 s song in 54 s, a 60 s song in 2 minutes
+            return 50 + 1.2 * movie
         return (90 + 1.6 * movie) * S["calib"]["music"]
+    if job["kind"] == "sfx":  # two or three seconds a sound; the first of a movie also has the descriptions written
+        return 10
     if job["kind"] == "ref":
         return estimate("image", "square")
     p = P.get(job["project"])
@@ -648,6 +683,60 @@ def wan_graph(text, w, h, frames, seed, prefix, start_image=None, fast=False):
     return g
 
 
+def audio_out(latent, vae, prefix):
+    """The last two steps of an audio graph: decode with the app's own node (comfy_nodes/storyboard_audio.py, which
+    works around a Mac problem with the sound-effects model and leaves room for loud peaks) and save the file."""
+    return {"7": {"class_type": "StoryboardDecodeAudio", "inputs": {"samples": latent, "vae": vae}},
+            "8": {"class_type": "SaveAudio", "inputs": {"audio": ["7", 0], "filename_prefix": prefix}}}
+
+
+def need_audio_node():
+    """The audio graphs end in the app's own node. ComfyUI only has it when the app started ComfyUI itself (the node is
+    copied in just before); say so plainly instead of failing with "unknown node"."""
+    try:
+        if "StoryboardDecodeAudio" in comfy_get("/object_info/StoryboardDecodeAudio"):
+            return
+    except Exception:
+        pass
+    install_nodes()
+    raise JobFailed("ComfyUI was already running when the app started, so the app's sound helper is not loaded in it. "
+                    "Close ComfyUI and this app, then start the app again: it starts ComfyUI itself.")
+
+
+def song_graph(tags, lyrics, seconds, seed, prefix, bpm=96, key="D minor"):
+    """A whole song with a sung voice (ACE-Step 1.5, the turbo model): `tags` say what it sounds like,
+    `lyrics` are the words. The graph is the one in ComfyUI's own template for this model."""
+    return {
+        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": SONG_MODEL}},
+        "2": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["1", 0], "shift": 3}},
+        "3": {"class_type": "TextEncodeAceStepAudio1.5",
+              "inputs": {"clip": ["1", 1], "tags": tags, "lyrics": lyrics, "seed": seed, "bpm": bpm, "duration": seconds,
+                         "timesignature": "4", "language": "en", "keyscale": key, "generate_audio_codes": True,
+                         "cfg_scale": 2.0, "temperature": 0.85, "top_p": 0.9, "top_k": 0, "min_p": 0.0}},
+        "4": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["3", 0]}},
+        "5": {"class_type": "EmptyAceStep1.5LatentAudio", "inputs": {"seconds": seconds, "batch_size": 1}},
+        "6": {"class_type": "KSampler",
+              "inputs": {"model": ["2", 0], "positive": ["3", 0], "negative": ["4", 0], "latent_image": ["5", 0], "seed": seed,
+                         "steps": 8, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
+        **audio_out(["6", 0], ["1", 2], prefix),
+    }
+
+
+def sfx_graph(text, seconds, seed, prefix):
+    """The sounds of a shot from a description of them (Stable Audio 3, the small sound-effects model)."""
+    return {
+        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": SFX_MODEL}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": SFX_READER, "type": "stable_audio", "device": "default"}},
+        "3": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": text}},
+        "4": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": ""}},
+        "5": {"class_type": "EmptyLatentAudio", "inputs": {"seconds": seconds, "batch_size": 1}},
+        "6": {"class_type": "KSampler",
+              "inputs": {"model": ["1", 0], "positive": ["3", 0], "negative": ["4", 0], "latent_image": ["5", 0], "seed": seed,
+                         "steps": 8, "cfg": 1.0, "sampler_name": "lcm", "scheduler": "simple", "denoise": 1.0}},
+        **audio_out(["6", 0], ["1", 2], prefix),
+    }
+
+
 def bake_fast_model():
     """Make the Fast video model: bake the Turbo add-on into its own copy of the video model (a 10 GB file).
     Applying the add-on on the fly instead makes ComfyUI hold two copies of the model, which swaps badly on a
@@ -852,7 +941,8 @@ def ollama_watch():
                 RUNTIME["ollama"] = "down"
         except Exception:
             pass
-        time.sleep(30)
+        # look often while there is nothing to write with, so a model downloaded on the Models page shows up at once
+        time.sleep(30 if RUNTIME.get("text_models") else 5)
 
 
 def script_schema(n):
@@ -918,7 +1008,7 @@ def write_script(idea, kind, n, shot_seconds, model):
         refresh_text_models()
         model = default_text_model()
     if not model:
-        raise ValueError("Ollama has no writing model yet. In Terminal, run: ollama pull qwen3.5:9b")
+        raise ValueError("There is no writing model on this computer yet. Open Models and download the Script writer.")
     body = {"model": model, "stream": False, "format": script_schema(n), "keep_alive": 0, "think": False,
             "options": {"temperature": 0.8, "num_ctx": 8192, "num_predict": 600 + 260 * n},
             "messages": script_messages(idea, kind, n, shot_seconds)}
@@ -995,7 +1085,12 @@ def script_task(pid, model, n, shot_seconds, begin):
                 save_project(p)
                 log("script written for", pid, "-", len(p["shots"]), "shots")
                 if begin:
-                    begin_project(pid)
+                    try:
+                        begin_project(pid)
+                    except ValueError as e:  # the script is fine: say why nothing was started
+                        log("could not begin", pid, e)
+                        p["begin_error"] = str(e)
+                        save_project(p)
         except Exception as e:
             log("script failed for", pid, e)
             with LOCK:
@@ -1012,6 +1107,7 @@ def start_script(pid, model, total_seconds, shot_seconds, begin):
         n = max(1, min(60, math.ceil(total_seconds / shot_seconds)))
         p["writing"] = "waiting"
         p.pop("script_error", None)
+        p.pop("begin_error", None)
         p["length"], p["shot_seconds"] = n * shot_seconds, shot_seconds
         if model:
             S["settings"]["text_model"] = model
@@ -1036,6 +1132,8 @@ def job_label(job):
         return f"Character picture: {(c or {}).get('name') or '(removed character)'}, {p['name']}"
     i, s = find_shot(p, job["shot"])
     unit = KINDS.get(p.get("kind"), KINDS["other"])["unit"].lower()
+    if job["kind"] == "sfx":
+        return f"Sounds: {p['name']}, {unit} {i + 1}" if s else f"Sounds: {p['name']} (deleted {unit})"
     what = "Picture" if job["kind"] == "image" else f"Video ({job_params(job)[0]} s{', fast' if job_params(job)[2] else ''})"
     return f"{what}: {p['name']}, {unit} {i + 1}" if s else f"{what}: {p['name']} (deleted {unit})"
 
@@ -1105,10 +1203,13 @@ def queue_shot(pid, sid, what):
             raise ValueError("Describe what happens in this shot first.")
         added = []
         if what == "image":
+            need_models("picture")
             queue_refs(pid, [s])
             added.append(add_job(pid, sid, "image"))
         else:
-            if s.get("start_from") == "picture" and not s.get("image") and not pending(pid, sid, "image"):
+            picture_first = s.get("start_from") == "picture" and not s.get("image") and not pending(pid, sid, "image")
+            need_models(*(["picture"] if picture_first else []), "video")
+            if picture_first:
                 queue_refs(pid, [s])
                 added.append(add_job(pid, sid, "image"))
             added.append(add_job(pid, sid, "video"))
@@ -1125,17 +1226,16 @@ def queue_everything(pid, videos=None):
         if videos is None:
             videos = p.get("make_videos", True)
         need = shots_needing_picture(p)
+        films = [s for s in p["shots"] if (s.get("text") or "").strip() and not s.get("video")
+                 and not pending(pid, s["id"], "video")] if videos else []
+        need_models(*(["picture"] if need else []), *(["video"] if films else []))
         n += queue_refs(pid, need)  # character pictures first: the shots' pictures are drawn from them
         for s in need:
             add_job(pid, s["id"], "image")
             n += 1
-        if videos:
-            for s in p["shots"]:
-                if not (s.get("text") or "").strip():
-                    continue
-                if not s.get("video") and not pending(pid, s["id"], "video"):
-                    add_job(pid, s["id"], "video")
-                    n += 1
+        for s in films:
+            add_job(pid, s["id"], "video")
+            n += 1
         save_state()
         return n
 
@@ -1147,6 +1247,9 @@ def begin_project(pid):
         if not any((s.get("text") or "").strip() for s in p["shots"]):
             raise ValueError("There is nothing to make yet. Write the script first.")
         n = queue_everything(pid, videos=True)
+        p.pop("begin_error", None)
+        if (p.get("sounds") or {}).get("on") and models.kit_ready("effects"):
+            n += queue_sounds(pid)
         if (p.get("music") or {}).get("on") and not p.get("soundtrack") and not pending(pid, None, "music"):
             add_job(pid, None, "music", compose=True)  # after the videos, before the movie is put together
             n += 1
@@ -1155,6 +1258,26 @@ def begin_project(pid):
         add_job(pid, None, "movie")
         save_state()
         return n + 1
+
+
+def queue_sounds(pid, again=False):
+    """Queue the sounds of every shot that has none yet (or of every shot, to make them all again)."""
+    p = P[pid]
+    todo = [s for s in p["shots"] if (s.get("text") or "").strip() and (again or not s.get("sfx"))
+            and not pending(pid, s["id"], "sfx")]
+    for s in todo:
+        add_job(pid, s["id"], "sfx")
+    return len(todo)
+
+
+def requeue_movie(pid):
+    """Put the movie together again after whatever is now in the queue for it, when there are videos to join."""
+    p = P[pid]
+    if any(s.get("video") for s in p["shots"]) or any(
+            j["project"] == pid and j["kind"] == "video" and j["status"] in ("waiting", "running") for j in S["jobs"]):
+        S["jobs"] = [j for j in S["jobs"]
+                     if not (j["project"] == pid and j["kind"] == "movie" and j["status"] == "waiting")]
+        add_job(pid, None, "movie")
 
 
 def queue_music(pid, compose=True):
@@ -1194,8 +1317,9 @@ def remake_project(pid, preview=False):
     stay as earlier versions. With preview=True it only reports what would be made."""
     with LOCK:
         p = P[pid]
+        need_models("picture")
         if not refs_available():
-            raise ValueError("Character pictures are not installed.")
+            raise ValueError(NO_REFS)
         if not uses_refs(p):
             raise ValueError("Character pictures are switched off for this project. Tick the box under Characters first.")
         if p.get("writing"):
@@ -1233,7 +1357,7 @@ def blocked(job):
     if not p:
         return "The project was deleted."
     if job["kind"] == "movie":
-        if any(j["project"] == p["id"] and j["kind"] in ("image", "video", "music") and j["status"] in ("waiting", "running")
+        if any(j["project"] == p["id"] and j["kind"] in ("image", "video", "music", "sfx") and j["status"] in ("waiting", "running")
                for j in S["jobs"]):
             return "wait"
         return None if any(s.get("video") for s in p["shots"]) else "There are no finished videos to join."
@@ -1326,8 +1450,30 @@ def ref_prompt(p, c):
                                 sentence(p.get("style"))) if x)
 
 
+def short_look(look, limit=80):
+    """What kind of thing a character is, in a few words: the description up to its first detail
+    ("a small penguin astronaut" from "a small penguin astronaut with an orange beak, wearing ...")."""
+    text = (look or "").strip().rstrip(" .,;")
+    t = text
+    for m in re.finditer(r"[,;.]| with | wearing | who | that | holding | carrying ", text):
+        start = text[:m.start()].strip(" .,;")
+        if len(start.split()) >= 4:  # "a tall, thin woman with ..." must not stop at "a tall"
+            t = start
+            break
+    return t if len(t) <= limit else t[:limit].rsplit(" ", 1)[0].rstrip(" ,;")
+
+
+def who_is_who(p, s):
+    """One short sentence per character in a shot, for the video model. It sees the picture but has never
+    heard the names, so without this "Waddle waves" can make the rocket beside him grow an arm and wave."""
+    named = {"who": s.get("who"), "text": f"{s.get('motion') or ''} {s.get('text') or ''}"}
+    kinds = [(c["name"].strip(), short_look(c.get("look"))) for c in shot_cast(p, named)]
+    return " ".join(f"{name} is {lower_first(kind)}." for name, kind in kinds if kind)
+
+
 def video_prompt(p, s):
-    return " ".join(x for x in (sentence(s.get("motion")), sentence(s.get("text")), sentence(p.get("style"))) if x)
+    return " ".join(x for x in (sentence(s.get("motion")), who_is_who(p, s), sentence(s.get("text")),
+                                sentence(p.get("style"))) if x)
 
 
 def shot_seed(p, s, key):
@@ -1368,7 +1514,7 @@ def wait_for(job, prompt_id):
         status = entry.get("status", {})
         if status.get("status_str") == "success":
             for out in entry.get("outputs", {}).values():
-                for f in out.get("images", []) + out.get("gifs", []) + out.get("video", []):
+                for f in out.get("images", []) + out.get("gifs", []) + out.get("video", []) + out.get("audio", []):
                     if f.get("type") == "output":
                         return f
             raise JobFailed("ComfyUI finished but saved no file.")
@@ -1567,7 +1713,7 @@ def run_music_job(job):
             rec = music.save_piece(None, {
                 "name": cue["name"], "origin": f"Soundtrack for “{snap['name']}” ({music.STYLE_LABEL[style].lower()})",
                 "movie": job["project"], "ly": cue["ly"], "sound": cue["sound"], "beat": cue["beat"], "desk": cue["desk"],
-                "scoreBpm": cue["scoreBpm"], "withBeat": cue["withBeat"]})
+                "film": cue.get("film"), "withFilm": True, "scoreBpm": cue["scoreBpm"], "withBeat": cue["withBeat"]})
             piece_id = rec["id"]
         stage("Recording the audio")
         piece = music.read_piece(piece_id)
@@ -1594,6 +1740,229 @@ def run_music_job(job):
     log("music ready for", job["project"], f"piece {piece_id}, {info['music']:.1f}s of music for a {target:.0f}s movie")
 
 
+def ask_writer(system, user, schema, tokens):
+    """One question to the local writing model, answered as JSON in the given shape. None when there is no
+    writing model on this computer (or it could not answer)."""
+    if not ensure_ollama():
+        return None
+    refresh_text_models()
+    model = default_text_model()
+    if not model:
+        return None
+    body = {"model": model, "stream": False, "format": schema, "keep_alive": 0, "think": False,
+            "options": {"temperature": 0.6, "num_ctx": 8192, "num_predict": tokens},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    try:
+        res = ollama_call("/api/chat", body, timeout=900)
+    except ValueError as e:
+        if "think" not in str(e).lower():
+            raise
+        body.pop("think")
+        res = ollama_call("/api/chat", body, timeout=900)
+    raw = (res.get("message") or {}).get("content", "")
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
+
+
+def free_engine_memory():
+    """Hand ComfyUI's memory back, so the writing model has room next to it."""
+    try:
+        if comfy_up(timeout=2):
+            comfy_post("/free", {"unload_models": True, "free_memory": True}, timeout=20)
+    except Exception:
+        pass
+
+
+def song_words(idea, kind, look, shots, note, seconds):
+    """A song for the movie, written on this computer by the local writing model: (title, tags, lyrics, bpm, key).
+    The tags tell the song maker what it should sound like; the lyrics are the words it sings. Without a
+    writing model the film maker's note becomes the description and the song has no words."""
+    plain = ("Soundtrack", clean(note, 300) or "cinematic, emotional, a slow build, strings and piano", "[Instrumental]", 96, "D minor")
+    try:
+        lines = max(2, min(24, round(seconds / 5.5)))   # sung words need room: about one line every five or six seconds
+        schema = {"type": "object", "required": ["title", "tags", "lyrics", "bpm", "key"], "properties": {
+            "title": {"type": "string"}, "tags": {"type": "string"}, "lyrics": {"type": "string"},
+            "bpm": {"type": "integer"}, "key": {"type": "string", "enum": SONG_KEYS}}}
+        system = ("You write the song for a short film. Its music will be made by a song generator from your description and "
+                  "your words. Answer with: 'title', a short title for the song. 'tags', one line that tells the generator "
+                  "what the song sounds like: the genre, the mood, the main instruments, the kind of singing voice and the "
+                  "tempo in words, separated by commas, for example 'slow dark folk ballad, fingerpicked guitar, sparse piano, "
+                  "soft female vocals, melancholic'. 'lyrics', the words to sing: put a label in square brackets on a line "
+                  "of its own before each part ([Verse], [Chorus], [Bridge], [Outro]), write two to four short lines to a "
+                  "part, in simple words that sing well, about what the film is about and in its mood, without naming the "
+                  f"film. The song lasts only {int(seconds)} seconds, so write no more than {lines} lines of words in all "
+                  "(fewer for a slow song: words that do not fit are rushed or cut off), and repeat the chorus only if "
+                  "there is room. 'bpm', the "
+                  "tempo, between 60 and 160. 'key', the key the song is in.")
+        listing = "\n".join(f"{i}. {s['text']}" for i, s in enumerate(shots, 1))
+        user = (f"Kind of film: {kind}\nThe idea: {idea}\nThe look: {look}\n\nThe shots:\n{listing}"
+                + (f"\n\nThe film maker asks for this music: {note}" if note else ""))
+        data = ask_writer(system, user, schema, 900)
+        if not data:
+            return plain
+        key = data.get("key") if data.get("key") in SONG_KEYS else "D minor"
+        try:
+            bpm = int(min(160, max(60, int(data.get("bpm") or 96))))
+        except (TypeError, ValueError):
+            bpm = 96
+        return (clean(data.get("title"), 60) or "Soundtrack", clean(data.get("tags"), 400) or plain[1],
+                str(data.get("lyrics") or "").strip()[:3000] or "[Instrumental]", bpm, key)
+    except Exception as e:
+        log("the words for the song could not be written:", e)
+        return plain
+
+
+def run_song_job(job):
+    """Make a song with a sung voice for the movie and make it the project's soundtrack. Everything happens on
+    this computer: the local writing model writes the words, the song maker (ACE-Step 1.5) sings them."""
+    if not models.kit_ready("songs"):
+        raise JobFailed(NO_SONGS)
+    with LOCK:
+        p = P[job["project"]]
+        shots = [s for s in p["shots"] if (s.get("text") or "").strip()]
+        if not shots:
+            raise JobFailed("There are no shots to write music for.")
+        target = float(sum(int(s.get("seconds", 3)) for s in shots))
+        note = clean((p.get("music") or {}).get("note"), 300)
+        snap = {"idea": p.get("idea", ""), "kind": p.get("kind", "other"), "look": p.get("style", ""),
+                "shots": [{"text": s.get("text", "")} for s in shots]}
+        mdir = media_dir(p["id"])
+        mdir.mkdir(parents=True, exist_ok=True)
+    job["stage"] = "Writing the words"
+    free_engine_memory()
+    title, tags, words, bpm, key = song_words(snap["idea"], KINDS.get(snap["kind"], KINDS["other"])["label"], snap["look"],
+                                              snap["shots"], note, target)
+    if job.get("cancel"):
+        raise JobCancelled()
+    job["stage"] = "Making the song"
+    ensure_comfy()
+    need_audio_node()
+    log("making a song for", job["project"], f"({target:.0f}s, {bpm} bpm, {key}): {tags[:120]}")
+    produced = submit_and_wait(job, song_graph(tags, words, round(target, 1), int(time.time()) % (2 ** 31),
+                                               f"storyboard/{job['id']}", bpm, key))
+    name = f"soundtrack_{int(time.time())}.m4a"
+    try:
+        music.encode(produced, mdir / name)
+    except RuntimeError as e:
+        raise JobFailed(str(e))
+    finally:
+        produced.unlink(missing_ok=True)
+    with LOCK:
+        p = P.get(job["project"])
+        if not p:
+            raise JobFailed("The project was deleted.")
+        p["soundtrack"], p["soundtrack_name"] = name, title
+        mm = p.setdefault("music", {})
+        for k in ("piece", "print", "brief"):
+            mm.pop(k, None)
+        mm.update(title=title, current="song", made=time.time(), seconds=target, target=target, words=words, sound=tags)
+        save_project(p)
+    log("song ready for", job["project"], f"“{title}”")
+
+
+def write_sounds(pid):
+    """What is heard in each shot that has no description of its sounds yet, in a few words, written by the
+    local writing model. Without one, the start of the shot's own text has to do."""
+    with LOCK:
+        p = P[pid]
+        todo = [s for s in p["shots"] if (s.get("text") or "").strip() and not (s.get("sound") or "").strip()]
+        snap = [(s["id"], s.get("text", ""), s.get("motion", "")) for s in todo]
+        kind, idea = KINDS.get(p.get("kind"), KINDS["other"])["label"], p.get("idea", "")
+    if not snap:
+        return
+    lines = {}
+    try:
+        n = len(snap)
+        schema = {"type": "object", "required": ["sounds"], "properties": {
+            "sounds": {"type": "array", "minItems": n, "maxItems": n, "items": {"type": "string"}}}}
+        system = ("You are the sound designer of a short film. You are given its shots in order. For each shot, write one "
+                  "plain sentence that says what is HEARD there, for a sound-effects generator that knows the names sound "
+                  "libraries use. Name the steady sound of the place first (rain, wind, traffic, a quiet room, a crowd, "
+                  "waves, birds in a forest), then one or two things that happen in the shot (footsteps on a named "
+                  "surface, a door, paper rustling, an engine), then the space (outdoors or indoors, close or distant). "
+                  "Use common, concrete words; nothing poetic, no feelings, no music, no speech or voices, no names, and "
+                  "no hums, drones or rumbles unless a machine is in the shot. Leave out everything that can only be seen: "
+                  "light, colours, reflections, signs, fog, shadows, the camera and its focus. If a shot is silent, name "
+                  "the quiet of the place (a quiet empty street at night, faint wind). "
+                  "Examples: 'Light rain on a city street at night, cars passing on wet asphalt, slow footsteps, close "
+                  "perspective.' 'Quiet forest at dawn, birds chirping, soft wind through leaves.' 'Busy cafe interior, "
+                  "cups clinking, muffled conversations.' 'Footsteps on gravel, steady walking pace, close perspective.' "
+                  "Give exactly one entry per shot, in order.")
+        listing = "\n".join(f"{i}. {text}" + (f" ({motion})" if motion else "") for i, (_, text, motion) in enumerate(snap, 1))
+        free_engine_memory()
+        data = ask_writer(system, f"Kind of film: {kind}\nThe idea: {idea}\n\nThe shots:\n{listing}", schema, 200 + 60 * n)
+        for (sid, _, _), line in zip(snap, (data or {}).get("sounds") or []):
+            lines[sid] = clean(line, 240)
+    except Exception as e:
+        log("the sounds of the shots could not be written:", e)
+    with LOCK:
+        p = P.get(pid)
+        if not p:
+            return
+        for sid, text, _ in snap:
+            _, s = find_shot(p, sid)
+            if s is not None and not (s.get("sound") or "").strip():
+                s["sound"] = lines.get(sid) or clean(re.split(r"(?<=[.;:])\s", text.strip())[0], 200)
+        save_project(p)
+
+
+def run_sfx_job(job):
+    """Make the sounds of one shot (footsteps, rain, traffic ...) from a description of them, on this computer."""
+    if not models.kit_ready("effects"):
+        raise JobFailed(NO_SOUNDS)
+    with LOCK:
+        p = P[job["project"]]
+        _, s = find_shot(p, job["shot"])
+        need_words = s is not None and not (s.get("sound") or "").strip()
+    if need_words:
+        job["stage"] = "Working out what is heard"
+        write_sounds(job["project"])
+    with LOCK:
+        p = P.get(job["project"])
+        _, s = find_shot(p, job["shot"]) if p else (-1, None)
+        if s is None:
+            raise JobFailed("The shot was deleted while this was being made.")
+        text = (s.get("sound") or "").strip()
+        seconds = min(SFX_MAX, max(2, int(s.get("seconds", 5))))
+        seed = shot_seed(p, s, "sfxs")
+        mdir = media_dir(p["id"])
+        mdir.mkdir(parents=True, exist_ok=True)
+    if not text:
+        raise JobFailed("Say what is heard in this shot first.")
+    job["stage"] = "Making the sounds"
+    ensure_comfy()
+    need_audio_node()
+    # The sound-effects model was taught with descriptions that end in the length of the sound.
+    produced = submit_and_wait(job, sfx_graph(f"{text.rstrip(' .')}. Length: {seconds} seconds", seconds + 0.5, seed, f"storyboard/{job['id']}"))
+    try:
+        with LOCK:
+            p = P.get(job["project"])
+            _, s = find_shot(p, job["shot"]) if p else (-1, None)
+            if s is None:
+                raise JobFailed("The shot was deleted while this was being made.")
+            name = f"{s['id']}_sfx_{len(s.get('sfxs', [])) + 1}.m4a"
+        # Every shot's sounds are brought to the same loudness, so no shot jumps out of the mix.
+        # ... after the deepest rumble is taken out: it is felt more than heard, fights the music, and would otherwise
+        # be turned up a long way by the loudness step, which hardly hears it.
+        r = subprocess.run([FFMPEG, "-y", "-v", "error", "-i", str(produced), "-af", "highpass=f=75,highpass=f=75,loudnorm=I=-24:TP=-3:LRA=11",
+                            "-ar", "44100", "-ac", "2", "-c:a", "aac", "-b:a", "160k", str(mdir / name)],
+                           capture_output=True, text=True)
+        if r.returncode != 0 or not (mdir / name).exists():
+            raise JobFailed("The sounds could not be saved. " + r.stderr[-200:])
+        with LOCK:
+            p = P.get(job["project"])
+            _, s = find_shot(p, job["shot"]) if p else (-1, None)
+            if s is None:
+                raise JobFailed("The shot was deleted while this was being made.")
+            s.setdefault("sfxs", []).append(name)
+            s["sfx"] = name
+            save_project(p)
+    finally:
+        produced.unlink(missing_ok=True)
+
+
 def run_job(job):
     if job["kind"] == "movie":
         try:
@@ -1602,7 +1971,17 @@ def run_job(job):
             raise JobFailed(str(e))
         return
     if job["kind"] == "music":
+        with LOCK:
+            style = (P[job["project"]].get("music") or {}).get("style")
+        if style == "song" and job.get("compose", True):
+            job["song"] = True
+            return run_song_job(job)
         return run_music_job(job)
+    if job["kind"] == "sfx":
+        return run_sfx_job(job)
+    why = why_no("video" if job["kind"] == "video" else "picture")
+    if why:  # say it in plain words before the engine answers with a list of file names
+        raise JobFailed(why)
     ensure_comfy()
     if job["kind"] == "ref":
         return run_ref_job(job)
@@ -1792,13 +2171,13 @@ def job_view(job, now):
         pr = PROGRESS.get(job.get("prompt_id"))
         frac = min(elapsed / est, 0.97) if est else 0
         phase = ("Joining the clips" if job["kind"] == "movie" else job.get("stage") or "Getting ready"
-                 if job["kind"] == "music" else "Getting the model ready")
+                 if job["kind"] in ("music", "sfx") else "Getting the model ready")
         part, parts = job.get("part", 1), job.get("parts", 1)
         later = est * (parts - part) / parts  # parts of a long clip that have not started yet
         if pr and pr[1]:
             step, steps, first, last, first_val = pr
             phase = f"Step {step} of {steps}"
-            tail = 20 if job["kind"] in ("image", "ref") else 30 + video_frames(split_seconds(job_params(job)[0])[part - 1]) * 0.8
+            tail = 30 + video_frames(split_seconds(job_params(job)[0])[part - 1]) * 0.8 if job["kind"] == "video" else 20
             if step > first_val and last > first:
                 per = (last - first) / (step - first_val)
                 remaining = (steps - step) * per + tail + later
@@ -1847,6 +2226,8 @@ def state_view():
             # music: can it be written here, in which styles, and whose score was changed in the studio since
             "music": dict(zip(("ready", "why"), music.composer_ready()),
                           styles=[[k, music.STYLE_LABEL[k]] for k in MUSIC_STYLES]),
+            # the two extras: can a song be made here, can the sounds of the shots be made here
+            "songs": models.kit_ready("songs"), "sounds": models.kit_ready("effects"),
             "music_stale": {p["id"]: True for p in P.values()
                             if (p.get("music") or {}).get("current") == "piece" and p["music"].get("print")
                             and music.fingerprint(p["music"].get("piece") or "") not in ("", p["music"]["print"])},
@@ -1884,17 +2265,21 @@ def export_movie(pid):
     with LOCK:
         p = P[pid]
         mdir = media_dir(pid)
-        clips = [mdir / s["video"] for s in p["shots"] if s.get("video") and (mdir / s["video"]).exists()]
+        used = [s for s in p["shots"] if s.get("video") and (mdir / s["video"]).exists()]
+        clips = [mdir / s["video"] for s in used]
         audio = mdir / p["soundtrack"] if p.get("soundtrack") else None
         mm = p.get("music") or {}
-        music_len = mm.get("seconds") if mm.get("current") == "piece" else None  # the music itself, without its ring-out
+        # the music itself, without its ring-out (a piece from the studio or a song: both are made to the movie's length)
+        music_len = mm.get("seconds") if mm.get("current") in ("piece", "song") else None
+        sounds = dict(p.get("sounds") or {})
+        sfx = [mdir / s["sfx"] if sounds.get("on") and s.get("sfx") and (mdir / s["sfx"]).exists() else None for s in used]
     if not clips:
         raise ValueError("There are no finished videos to join yet.")
     out_dir = PROJECTS / pid / "exports"
     out_dir.mkdir(exist_ok=True)
     out = out_dir / f"{safe_name(p['name'])}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
     audio = audio if audio and audio.exists() else None
-    picture = out.with_name(out.stem + "_picture.mp4") if audio else out
+    picture = out.with_name(out.stem + "_picture.mp4") if audio or any(sfx) else out
     listing = out_dir / "_join.txt"
     listing.write_text("".join("file '" + str(c).replace("'", "'\\''") + "'\n" for c in clips))
     r = subprocess.run([FFMPEG, "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-an", "-c:v", "libx264",
@@ -1903,19 +2288,41 @@ def export_movie(pid):
     listing.unlink(missing_ok=True)
     if r.returncode != 0 or not picture.exists():
         raise ValueError("Joining the videos failed: " + r.stderr[-300:])
-    if audio:
-        # The music runs under the whole picture and never changes its length: silence is added if the music is
-        # shorter, and it fades out with the last shot if it is longer.
+    if audio or any(sfx):
         length = media_seconds(picture)
-        runs_on = media_seconds(audio) > length + 5 or (music_len or length) > length + 0.75
-        fade = min(2.5 if runs_on else 1.2, length / 3)
-        r = subprocess.run([FFMPEG, "-y", "-v", "error", "-i", str(picture), "-i", str(audio), "-map", "0:v:0", "-map", "1:a:0",
-                            "-c:v", "copy", "-af", f"apad,afade=t=out:st={max(0.0, length - fade):.3f}:d={fade:.3f}",
-                            "-c:a", "aac", "-b:a", "192k", "-t", f"{length:.3f}", "-movflags", "+faststart", str(out)],
-                           capture_output=True, text=True)
+        cmd, chains, tracks = [FFMPEG, "-y", "-v", "error", "-i", str(picture)], [], []
+        stereo = "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo"
+        if audio:
+            # The music runs under the whole picture and never changes its length: silence is added if the music is
+            # shorter, and it fades out with the last shot if it is longer.
+            runs_on = media_seconds(audio) > length + 5 or (music_len or length) > length + 0.75
+            fade = min(2.5 if runs_on else 1.2, length / 3)
+            cmd += ["-i", str(audio)]
+            chains.append(f"[1:a]{stereo},apad,afade=t=out:st={max(0.0, length - fade):.3f}:d={fade:.3f}[music]")
+            tracks.append("[music]")
+        if any(sfx):
+            # The sounds of the shots: each one starts with its own shot and is faded at both ends.
+            louder = 20 * math.log10(SOUND_LEVELS.get(sounds.get("level"), SOUND_LEVELS["medium"]) / SOUND_LEVELS["medium"])
+            at, beds = 0.0, []
+            for clip, f in zip(clips, sfx):
+                d = media_seconds(clip)
+                if f:
+                    n, fade = (len(cmd) - 4) // 2, min(0.3, d / 4)  # the number of this input: the picture is 0
+                    cmd += ["-i", str(f)]
+                    chains.append(f"[{n}:a]{stereo},atrim=0:{d:.3f},afade=t=in:d=0.08,afade=t=out:st={max(0.0, d - fade):.3f}:d={fade:.3f},"
+                                  f"adelay={int(at * 1000)}:all=1,volume={louder:.1f}dB[s{n}]")
+                    beds.append(f"[s{n}]")
+                at += d
+            chains.append("".join(beds) + (f"amix=inputs={len(beds)}:normalize=0," if len(beds) > 1 else "") + "apad[sounds]")
+            tracks.append("[sounds]")
+        chains.append("".join(tracks) + (f"amix=inputs={len(tracks)}:normalize=0," if len(tracks) > 1 else "")
+                      + "alimiter=limit=0.95:level=false[out]")
+        cmd += ["-filter_complex", ";".join(chains), "-map", "0:v:0", "-map", "[out]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                "-t", f"{length:.3f}", "-movflags", "+faststart", str(out)]
+        r = subprocess.run(cmd, capture_output=True, text=True)
         picture.unlink(missing_ok=True)
         if r.returncode != 0 or not out.exists():
-            raise ValueError("Putting the music under the movie failed: " + r.stderr[-300:])
+            raise ValueError("Putting the sound under the movie failed: " + r.stderr[-300:])
     with LOCK:
         p = P.get(pid)
         if p:
@@ -2145,6 +2552,8 @@ class Handler(BaseHTTPRequestHandler):
                 if shot_seconds not in SECONDS_CHOICES:
                     shot_seconds = 5
                 total = max(shot_seconds, min(600, int(b.get("seconds") or 30)))
+                if b.get("begin"):  # say now what is missing, not after the script has been written
+                    need_models("picture", "video")
                 p = new_project(" ".join(idea.split()[:6])[:60] or "New movie", kind, shape)
                 p["idea"], p["make_videos"] = idea, True
                 style = b.get("music") if b.get("music") in MUSIC_STYLES else ""
@@ -2193,6 +2602,12 @@ class Handler(BaseHTTPRequestHandler):
                             mm["style"] = b["music"]["style"]
                         if "note" in b["music"]:
                             mm["note"] = str(b["music"]["note"])[:300]
+                    if isinstance(b.get("sounds"), dict):  # the sounds of the shots, under the music
+                        so = p.setdefault("sounds", {"on": False, "level": "medium"})
+                        if "on" in b["sounds"]:
+                            so["on"] = bool(b["sounds"]["on"])
+                        if b["sounds"].get("level") in SOUND_LEVELS:
+                            so["level"] = b["sounds"]["level"]
                     save_project(p)
                     return {"ok": True}
                 if len(rest) == 3 and rest[0] == "cast":  # a character's reference picture
@@ -2200,8 +2615,9 @@ class Handler(BaseHTTPRequestHandler):
                     if c is None:
                         raise ValueError("That character no longer exists.")
                     if rest[2] == "make":
+                        need_models("picture")
                         if not refs_available():
-                            raise ValueError("Character pictures are not installed.")
+                            raise ValueError(NO_REFS)
                         if not can_draw(c):
                             raise ValueError("Give this character a name and a description first.")
                         if not pending_ref(pid, c["id"]):
@@ -2270,11 +2686,26 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("The music is already in the queue.")
                     if not any((s.get("text") or "").strip() for s in p["shots"]):
                         raise ValueError("Write the shots first: the music is written to their length.")
-                    ok, why = music.composer_ready()
-                    if ok is False:
-                        raise ValueError(why)
+                    if (p.get("music") or {}).get("style") == "song":
+                        if not models.kit_ready("songs"):
+                            raise ValueError(NO_SONGS)
+                    else:
+                        ok, why = music.composer_ready()
+                        if ok is False:
+                            raise ValueError(why)
                     queue_music(pid, compose=True)
                     return {"ok": True}
+                if rest == ["sounds", "make"]:  # make the sounds of the shots now ({"again": true} = every shot anew)
+                    if not models.kit_ready("effects"):
+                        raise ValueError(NO_SOUNDS)
+                    p.setdefault("sounds", {"on": False, "level": "medium"})["on"] = True
+                    n = queue_sounds(pid, again=bool(b.get("again")))
+                    if not n:
+                        raise ValueError("Every shot has its sounds already.")
+                    requeue_movie(pid)
+                    save_project(p)
+                    save_state()
+                    return {"added": n}
                 if rest == ["music", "use"]:  # use a piece from the Music studio (again) as this movie's music
                     piece = str(b.get("piece") or (p.get("music") or {}).get("piece") or "")
                     music.read_piece(piece)
@@ -2299,6 +2730,8 @@ class Handler(BaseHTTPRequestHandler):
                             s["caption"] = str(b["caption"])[:4000]
                         if "motion" in b:
                             s["motion"] = str(b["motion"])[:1000]
+                        if "sound" in b:
+                            s["sound"] = str(b["sound"])[:240]
                         if "who" in b:
                             raw = b["who"] if isinstance(b["who"], list) else str(b["who"]).split(",")
                             s["who"] = [w for w in (clean(x, 40) for x in raw[:20]) if w]
@@ -2333,6 +2766,17 @@ class Handler(BaseHTTPRequestHandler):
                             save_project(p)
                         return {"ok": True}
                     if act == "make":
+                        if b.get("what") == "sound":  # the sounds of this one shot (again)
+                            if not models.kit_ready("effects"):
+                                raise ValueError(NO_SOUNDS)
+                            if not (s.get("text") or "").strip():
+                                raise ValueError("Describe what happens in this shot first.")
+                            if pending(pid, s["id"], "sfx"):
+                                raise ValueError("The sounds of this shot are already in the queue.")
+                            add_job(pid, s["id"], "sfx")
+                            requeue_movie(pid)
+                            save_state()
+                            return {"added": 1}
                         added = queue_shot(pid, s["id"], "image" if b.get("what") == "image" else "video")
                         return {"added": len(added)}
                 raise ValueError("Unknown request")
@@ -2396,6 +2840,7 @@ def main():
     for sig in (signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, stop)
     threading.Thread(target=ensure_comfy_quietly, daemon=True).start()
+    music.percussion.ensure()   # the recorded drums: made again here if a newer version cuts them differently
     if os.environ.get("STORYBOARD_NO_BROWSER") != "1":
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:

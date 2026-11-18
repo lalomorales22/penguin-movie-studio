@@ -56,12 +56,14 @@
     ['pad', 'sustain'], ['pluck', 'decay'], ['mallet', 'decay'], ['pad', 'decay'],
   ];
   const DECAYS = new Set([45, 46, 47, 55, 105, 106, 107, 108, 112, 113, 114, 115, 116, 117, 118, 119, 127]);
+  const HELD = new Set([122, 125, 126]);   // seashore, helicopter, applause: sounds that go on for as long as the note
   function family(p) {
     const [fallback, kind] = FAMILY[p >> 3];
     if (p === 45 || p === 46) return { fallback: 'pluck', sustain: false };   // pizzicato, harp
     if (p === 47) return { fallback: 'timpani', sustain: false };
     if (p >= 52 && p <= 54) return { fallback: 'choir', sustain: true };
-    if (p === 109 || p === 110) return { fallback: 'reed', sustain: true };    // bagpipe, fiddle
+    if (p >= 109 && p <= 111) return { fallback: 'reed', sustain: true };      // bagpipe, fiddle, shanai
+    if (HELD.has(p)) return { fallback, sustain: true };
     return { fallback, sustain: kind === 'sustain' && !DECAYS.has(p) };
   }
 
@@ -71,15 +73,32 @@
     52: -0.1, 53: 0.1, 56: 0.25, 57: 0.4, 58: 0.5, 59: 0.25, 60: -0.35, 61: 0.3,
     64: -0.1, 65: 0.05, 66: 0.15, 67: 0.25, 68: 0.1, 69: 0.15, 70: 0.2, 71: -0.1, 72: -0.2, 73: -0.15,
     8: -0.3, 9: -0.35, 10: -0.3, 11: -0.3, 12: -0.25, 13: -0.3, 14: -0.25,
+    // A band: rhythm guitar to one side, lead to the other, keys and horns in between, bass in the middle.
+    4: -0.25, 5: -0.25, 6: 0.25, 7: 0.25, 16: 0.3, 17: 0.3, 18: 0.3, 19: 0.15, 20: 0.3, 21: -0.25, 22: 0.2,
+    24: -0.3, 25: -0.3, 26: -0.3, 27: -0.3, 28: 0.3, 29: 0.35, 30: -0.35, 31: 0.3, 62: 0.2, 63: 0.2,
+    80: 0.15, 81: 0.15, 82: 0.15, 83: 0.15, 84: 0.15, 85: 0.15, 86: 0.15, 87: 0.15, 88: -0.1, 89: -0.1, 90: -0.1, 91: -0.1,
+    104: -0.2, 105: 0.3, 106: 0.2, 107: 0.2, 108: -0.25, 109: 0.2, 110: -0.3, 114: 0.25,
   };
+
+  // The recordings of a few instruments stop below the top of the keyboard: above these notes they are silent, so
+  // the player takes the highest note that sounds and tunes it up. (Measured on the FluidR3 GM set.)
+  const TOP = { 43: 57, 58: 72, 67: 72, 28: 84, 33: 84, 34: 84, 35: 84, 36: 84, 37: 84, 65: 84, 70: 84, 31: 85, 69: 85, 40: 93, 110: 93 };
+  // A few are recorded much louder than the rest, and a few much softer. These bring them into line (in decibels).
+  const TRIM = { 58: -4, 78: -4, 57: -3, 71: -3, 39: -3, 79: -3, 31: -3, 76: -3, 93: -3, 65: -2, 72: -2, 75: -2, 85: -2, 77: -2, 1: 3, 3: 3, 86: 3 };
 
   // Instruments offered on the keyboard's Sound menu, grouped.
   const KEYBOARD = [
     ['Orchestra', [48, 40, 41, 42, 43, 45, 44, 46, 47, 73, 72, 68, 71, 70, 69, 60, 56, 57, 58, 61, 52, 53, 8, 9, 13, 14]],
     ['Band and world', [24, 25, 26, 29, 30, 32, 33, 35, 16, 19, 21, 66, 65, 11, 12, 105, 107, 108, 110, 114]],
+    ['Keyboards', [1, 2, 3, 4, 5, 6, 7, 10, 15, 17, 18, 20, 22, 23]],
+    ['Guitars and basses', [27, 28, 31, 34, 36, 37, 38, 39]],
+    ['More orchestra', [49, 50, 51, 54, 55, 59, 62, 63, 64, 67, 74, 75, 76, 77, 78, 79]],
+    ['Synths and pads', [80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103]],
+    ['More from around the world', [104, 106, 109, 111, 112, 113, 115, 116, 117, 118, 119]],
+    ['Sound effects', [120, 121, 122, 123, 124, 125, 126, 127]],
   ];
 
-  const api = { LY, SAMPLE, LABEL, family, seat: p => SEAT[p] || 0, KEYBOARD,
+  const api = { LY, SAMPLE, LABEL, family, seat: p => SEAT[p] || 0, KEYBOARD, top: p => TOP[p] || 96, trim: p => Math.pow(10, (TRIM[p] || 0) / 20),
     byLyName: Object.fromEntries(LY.map((n, i) => [n, i])) };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GM = api;
 })(typeof window !== 'undefined' ? window : globalThis);

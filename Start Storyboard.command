@@ -5,7 +5,7 @@
 # For Night mode, leave this window open and the Mac switched on. The screen may go dark; that is fine.
 cd "$(dirname "$0")" || exit 1
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
-URL="http://127.0.0.1:8777"
+URL="http://127.0.0.1:${STORYBOARD_PORT:-8777}"
 
 if curl -s -o /dev/null -m 2 "$URL/api/state"; then
   echo "Storyboard is already running - opening it in your browser."

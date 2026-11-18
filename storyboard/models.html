@@ -435,7 +435,7 @@ function kitCard(k) {
     body += `<div class="ksize">${have} of ${want} instruments are here</div>`;
     if (music === null && state !== 'ready') body += '<div class="knote">Open this from the Storyboard app to download the rest.</div>';
     else if (music && state === 'downloading') body += '<div class="knote">Downloading the instruments…</div>';
-    else if (music && state !== 'ready') acts = `<button class="primary kbtn" data-sounds="1">Download the sounds (about ${Math.max(3, Math.round((want - have) * 2.4))} MB)</button>`;
+    else if (music && state !== 'ready') acts = `<button class="primary kbtn" data-sounds="1">Download the sounds (about ${Math.max(3, Math.round((want - have) * 2.5))} MB)</button>`;
     if (music) {
       const tools = [];
       if ('lilypond' in music) tools.push('LilyPond ' + (music.lilypond ? 'is here' : 'is missing'));
@@ -444,7 +444,22 @@ function kitCard(k) {
       if (tools.length) body += `<div class="knote dim">The Music section also needs: ${esc(tools.join(', '))}.</div>`;
     }
   }
-  return `<div class="kit ${state}" data-id="${k.id}"><div class="khead"><h4>${esc(k.title)}</h4><span class="badge ${KIT_BADGE[state]}">${KIT_WORD[state]}</span></div>` +
+  else if (k.kind === 'percussion') {
+    const p = (music && music.percussion) || k.perc || {};
+    state = p.state === 'ready' ? 'ready' : p.state === 'fetching' || p.state === 'building' ? 'downloading' : p.done ? 'partial' : 'missing';
+    body += `<div class="ksize">${size(k.bytes)} of recordings, in ${k.sources.reduce((n, s) => n + (+(/^(\d+) /.exec(s.what) || [0, 1])[1]), 0)} files</div>`;
+    body += `<details data-kit="${k.id}" ${openKits.has(k.id) ? 'open' : ''}><summary>What is in it</summary>` +
+      k.sources.map(s => `<div class="kfile"><span class="what">${esc(s.what)}. ${size(s.bytes)}, from ${esc(s.from)}. Licence: ${esc(s.licence)}.</span></div>`).join('') + '</details>';
+    if (p.state === 'fetching') body += progressBlock({state: 'running', done: p.done, total: p.total, speed: 0});
+    else if (p.state === 'building') body += '<div class="knote">Cutting the recordings into drums. This takes under a minute.</div>';
+    else if (state !== 'ready') {
+      if (p.error) body += `<div class="err">${esc(p.error)}</div>`;
+      if (music === null) body += '<div class="knote">Open this from the Storyboard app to download them.</div>';
+      else if (music) acts = `<button class="primary kbtn" data-perc="1">${p.error ? 'Try again' : p.done >= p.total ? 'Make the drums' : state === 'partial' ? `Download the rest (${size(p.total - p.done)})` : `Download (${size(k.bytes)})`}</button>`;
+    }
+  }
+  const word = k.job && k.job.state === 'queued' ? 'Waiting its turn' : KIT_WORD[state];
+  return `<div class="kit ${state}" data-id="${k.id}"><div class="khead"><h4>${esc(k.title)}</h4><span class="badge ${KIT_BADGE[state]}">${word}</span></div>` +
     `<div class="kabout">${esc(k.about)}</div>${body}${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
 }
 function drawKits() {
@@ -469,6 +484,7 @@ $('kits').addEventListener('toggle', e => {
 }, true);
 $('kits').addEventListener('click', async e => {
   const dl = e.target.closest('[data-kitdl]'), bake = e.target.closest('[data-bake]'), pull = e.target.closest('[data-pull]'), snd = e.target.closest('[data-sounds]');
+  const perc = e.target.closest('[data-perc]');
   try {
     if (dl) { dl.disabled = true; await call(API + '/kit/download', {id: dl.dataset.kitdl}); toast('On it. You can leave this page: it keeps going.'); await poll(); }
     if (bake) { bake.disabled = true; await call(API + '/bake', {}); toast('Lined up in the Storyboard queue. Fast video switches on when it is done.'); await poll(); }
@@ -478,6 +494,12 @@ $('kits').addEventListener('click', async e => {
       const r = await fetch('/music/api/sounds/fetch', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Storyboard': '1'}, body: '{}'});
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Open this from the Storyboard app.');
       soundsBusy = Date.now(); toast('Downloading the instrument sounds.'); loadMusic();
+    }
+    if (perc) {
+      perc.disabled = true;
+      const r = await fetch('/music/api/percussion/fetch', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Storyboard': '1'}, body: '{}'});
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Open this from the Storyboard app.');
+      toast('Downloading the recorded drums.'); loadMusic();
     }
   } catch (err) { toast(err.message); delete kitHtml[(e.target.closest('.kit') || {dataset: {}}).dataset.id]; drawKits(); }
 });
@@ -492,7 +514,7 @@ async function loadMusic() {
     music = await r.json();
     const n = +music.sounds || 0;
     if (n !== musicSeen) { musicSeen = n; musicSeenAt = Date.now(); }
-    if (soundsBusy && (n >= (+music.sounds_wanted || 58) || Date.now() - Math.max(musicSeenAt, soundsBusy) > 45000)) soundsBusy = 0;
+    if (soundsBusy && (n >= (+music.sounds_wanted || 128) || Date.now() - Math.max(musicSeenAt, soundsBusy) > 45000)) soundsBusy = 0;
   } catch (e) { music = null; soundsBusy = 0; }
   drawKits();
 }
@@ -828,7 +850,8 @@ async function poll() {
   }
 }
 poll(); loadMusic(); setInterval(poll, 1500); setInterval(loadMusic, 5000);
-setInterval(() => { if (soundsBusy) loadMusic(); }, 2000);   // follow the instrument download more closely while it runs
+const percBusy = () => music && music.percussion && (music.percussion.state === 'fetching' || music.percussion.state === 'building');
+setInterval(() => { if (soundsBusy || percBusy()) loadMusic(); }, 2000);   // follow the sound downloads more closely while they run
 </script>
 
 <script type="module">

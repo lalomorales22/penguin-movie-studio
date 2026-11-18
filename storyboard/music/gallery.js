@@ -9,7 +9,7 @@ const when = ms => new Date(ms).toLocaleString([], { month: 'short', day: 'numer
 
 const TRACKS = ['kick', 'snare', 'hat', 'openhat', 'clap', 'tom', 'rim', 'cowbell'];
 const CODES = { '.': 0, x: 1, X: 2, o: 3 }, VEL = [0, 0.62, 1, 0.3];
-const DESK_DEFAULTS = { bright: 18000, reso: 0.7, kdrive: 0, chorus: 0, echo: 0, fb: 0.35, room: 0.2, dlevel: 0.9, dtone: 18000, ddrive: 0, dtune: 0, droom: 0, decho: 0 };
+const DESK_DEFAULTS = { bright: 18000, reso: 0.7, kdrive: 0, chorus: 0, echo: 0, fb: 0.35, room: 0.2, dlevel: 0.9, dtone: 18000, ddrive: 0, dtune: 0, droom: 0, decho: 0, film: 1 };
 
 let cur = null;          // { piece, song, rate, tempo, beat }
 let pausedAt = 0, raf = 0;
@@ -112,7 +112,7 @@ async function open(id) {
   try { [piece, r] = await Promise.all([api('/api/pieces/' + id), api(`/api/pieces/${id}/render`)]); }
   catch { $('nowName').textContent = 'The app is not answering.'; return; }
   let song = null;
-  if (r.midi) { try { const s = atob(r.midi), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); song = Sound.parseMidi(a.buffer); } catch { song = null; } }
+  if (r.midi) { try { const s = atob(r.midi), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); song = Sound.parseMidi(a.buffer, r.perf); } catch { song = null; } }
   $('nowOpen').href = '/music/?piece=' + id;
   if (!song || !song.notes.length) {
     cur = null; markPlaying();
@@ -129,18 +129,18 @@ async function open(id) {
   for (const k of TRACKS) if (desk['mix_' + k] == null) desk['mix_' + k] = 1;
   for (const [k, v] of Object.entries(desk)) if (k !== 'echoTime' && typeof v === 'number') Sound.setDesk(k, v);
   Sound.setDesk('echoTime', (+desk.echoTime || 0.75) * 60 / tempo);
+  Sound.setSpace(desk.space || 'hall');
   $('gBeat').checked = !!piece.withBeat && beat.any; $('gBeat').disabled = !beat.any;
-  if (song.parts.some(([p]) => p > 0)) {
-    $('nowName').textContent = 'Getting the instruments ready…';
-    await Sound.prepare(song);
-    if (!cur || cur.song !== song) return;
-  }
+  // The instruments, and the recorded drums and film sounds if the piece uses any.
+  if (song.parts.some(([p]) => p > 0)) $('nowName').textContent = 'Getting the instruments ready…';
+  await Sound.prepare(song, piece.withFilm === false ? null : piece.film);
+  if (!cur || cur.song !== song) return;
   $('nowName').textContent = piece.name;
   pausedAt = 0; sizeRoll(); play(0);
 }
 function play(from) {
   if (!cur) return;
-  const t0 = Sound.playScore(cur.song, { from, rate: cur.rate, onEnd: () => { halt(); pausedAt = 0; draw(); } });
+  const t0 = Sound.playScore(cur.song, { from, rate: cur.rate, film: cur.piece.withFilm === false ? null : cur.piece.film, onEnd: () => { halt(); pausedAt = 0; draw(); } });
   if ($('gBeat').checked) Beat.start(t0, from);
   setIcon(true); markPlaying();
   cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);

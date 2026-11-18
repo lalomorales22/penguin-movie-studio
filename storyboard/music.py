@@ -26,6 +26,8 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import unquote
 
+import percussion  # the recorded drums and percussion (percussion.py)
+
 HERE = Path(__file__).resolve().parent
 WEB = HERE / "music"
 DATA = Path(os.environ.get("STORYBOARD_DATA", HERE / "data")).resolve()
@@ -89,9 +91,7 @@ GM_LY, GM_SAMPLE = _table("LY"), _table("SAMPLE")
 # FluidR3 GM (MIT licence), as packaged by github.com/gleitz/midi-js-soundfonts. Each instrument is
 # downloaded once into data/music/sounds/<name>.json as {"A0": base64 mp3, ...} and served from there.
 SAMPLE_SOURCE = "https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/"
-ORCHESTRA = [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 52, 53, 56, 57, 58, 59, 60, 61, 68, 69, 70, 71, 72, 73, 8, 9, 13, 14]
-BAND = [24, 25, 26, 27, 29, 30, 32, 33, 34, 35, 16, 17, 18, 19, 21, 64, 65, 66, 67, 11, 12, 105, 107, 108, 110, 114, 50, 62, 81, 89]
-STARTER = sorted(set(ORCHESTRA + BAND))  # the instruments the "Music sounds" kit holds
+STARTER = list(range(len(GM_SAMPLE)))  # the "Music sounds" kit holds every General MIDI instrument: all 128
 NO_FETCH = os.environ.get("MUSIC_NO_FETCH") == "1"  # never go online for a missing instrument (a synth stands in)
 _sound_locks, _locks_guard = {}, threading.Lock()
 FETCH = {"running": False, "done": 0, "total": 0, "failed": 0}
@@ -136,7 +136,7 @@ def sounds_have():
 
 
 def fetch_sounds():
-    """Download the starter set of orchestra and band sounds in the background (about 140 MB)."""
+    """Download every instrument that is not here yet, in the background (about 310 MB for all 128)."""
     if FETCH["running"]:
         return
     todo = [GM_SAMPLE[p] for p in STARTER if not sound_file(GM_SAMPLE[p]).exists()]
@@ -202,7 +202,8 @@ def tools(wait=True):
 
 
 def status():
-    return {**(tools() or {}), "sounds": sounds_have(), "sounds_wanted": len(STARTER), "fetch": dict(FETCH)}
+    return {**(tools() or {}), "sounds": sounds_have(), "sounds_wanted": len(STARTER), "fetch": dict(FETCH), "percussion": percussion.status(),
+            "have": [i for i, name in enumerate(GM_SAMPLE) if sound_file(name).exists()]}  # the instruments that are here
 
 
 def composer_ready():
@@ -229,15 +230,30 @@ _NOISE = re.compile(r"^(Processing|Parsing|Interpreting|Preprocessing|Finding|Fi
                     r"Converting|Success|GNU LilyPond|Changing working)")
 
 
+ENGRAVING = "2"  # goes into the key of every kept engraving: raise it when engrave() returns something new
+
+
 def engrave(ly):
-    """LilyPond code -> {ok, log, svgs: [page, ...], midi: base64 or None, pdf: base64 or None}."""
+    """LilyPond code -> {ok, log, svgs: [page, ...], midi: base64 or None, pdf: base64 or None, perf}.
+    perf is what the score says about how to play it (see performance()), or None when that could not be read."""
     with _engraving:
         d = Path(tempfile.mkdtemp(prefix="storyboard-ly-"))
         try:
-            (d / "score.ly").write_text(ly or "", encoding="utf-8")
-            _, _, err = run(LILY, ["-dbackend=cairo", "--svg", "--pdf", "-dno-point-and-click", "-o", "out", "score.ly"],
-                            cwd=d, timeout=180)
-            files = os.listdir(d)
+            def go(source):
+                for f in d.iterdir():
+                    f.unlink()
+                (d / "score.ly").write_text(source, encoding="utf-8")
+                _, _, said = run(LILY, ["-dbackend=cairo", "--svg", "--pdf", "-dno-point-and-click", "-I", str(WEB),
+                                        "-o", "out", "score.ly"], cwd=d, timeout=180)
+                return said, os.listdir(d)
+
+            # The listener goes in front on the same line, so every line number LilyPond reports stays right.
+            err, files = go('\\include "perform.ily" ' + (ly or ""))
+            listened = True
+            if not any(re.match(r"^out(-\d+)?\.svg$", f) for f in files):
+                # Never let the listener stand between a score and its engraving: try once more without it.
+                err, files = go(ly or "")
+                listened = False
 
             def page(f):
                 m = re.search(r"-(\d+)\.", f)
@@ -249,25 +265,300 @@ def engrave(ly):
             lines = [l for l in err.split("\n") if l.strip() and not _NOISE.match(l.strip())]
             missing = ("LilyPond is not installed on this computer. Double-click setup.command in the app's folder "
                        "(or run: brew install lilypond), then start the app again.") if "Could not find" in err else ""
+            perf = None
+            if midi_files and listened and "perform.txt" in files:
+                try:
+                    perf = performance((d / "perform.txt").read_text(encoding="utf-8", errors="replace"),
+                                       (d / midi_files[0]).read_bytes())
+                except Exception as e:  # the music still plays, with each note at the one loudness MIDI gives it
+                    log("music: the dynamics of a score could not be read:", e)
+            elif svg_files and midi_files and not listened:
+                log("music: a score was engraved without its dynamics (the listener did not load)")
             return {"ok": bool(svg_files), "log": missing or "\n".join(lines).replace("score.ly:", "line "),
                     "svgs": [(d / f).read_text(encoding="utf-8", errors="replace") for f in svg_files],
                     "midi": b64(midi_files[0]) if midi_files else None,
-                    "pdf": b64("out.pdf") if "out.pdf" in files else None}
+                    "pdf": b64("out.pdf") if "out.pdf" in files else None, "perf": perf}
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- how the score wants to be played
+# LilyPond's MIDI file gives every note a single loudness, taken from a table of its own, so a held chord under a
+# crescendo stays flat. music/perform.ily makes LilyPond write down what the score really says (dynamics, hairpins,
+# accents) with exact positions. Here that becomes one loudness line per MIDI track for the sound engine to follow.
+
+LEVELS = {"ppppp": 0.06, "pppp": 0.11, "ppp": 0.18, "pp": 0.28, "p": 0.40, "mp": 0.52, "mf": 0.62, "f": 0.75,
+          "ff": 0.87, "fff": 0.95, "ffff": 1.0, "fffff": 1.0, "n": 0.02}
+MF = LEVELS["mf"]
+HAIRPIN_STEP = 0.14        # how far a hairpin goes when no dynamic says where it ends: about one marking
+DROP_TICKS = 144           # an fp is loud for this long (a dotted sixteenth; 1536 ticks to the whole note)
+MARKS = {"accent", "marcato", "staccato", "staccatissimo", "tenuto", "portato", "espressivo"}
+STAFF_KINDS = {"Staff", "DrumStaff", "RhythmicStaff", "TabStaff"}
+
+
+def dynamic_kind(name):
+    """("level", x) for a plain dynamic, ("drop", loud, soft) for fp and its cousins, ("sting",) for sfz and
+    its cousins (an accent on one note that leaves the dynamic as it was), None for anything unknown."""
+    name = str(name or "").strip().lower()
+    if name in LEVELS:
+        return ("level", LEVELS[name])
+    m = re.match(r"^s(p{1,4})$", name)  # subito piano
+    if m:
+        return ("level", LEVELS[m.group(1)])
+    m = re.match(r"^s?(f{1,3})z?(p{1,3})$", name)  # fp, sfp, ffp, fzp, sfpp
+    if m:
+        return ("drop", LEVELS[m.group(1)], LEVELS[m.group(2)])
+    if re.match(r"^(s?f{1,3}z|sf{1,3}|rfz?)$", name):  # sf, sfz, sff, sffz, fz, rf, rfz
+        return ("sting",)
+    return None
+
+
+def level_line(events, end):
+    """The loudness of one staff over time. events: (tick, "A", name) for a dynamic and (tick, "H", way, starts)
+    for a hairpin (way 1 louder, -1 softer; starts 1 where it begins, 0 where it is ended by hand).
+    Returns ([[tick, level, glide], ...], [(tick, "sfz"), ...]): with glide 1 the level is reached in a straight
+    line from the entry before, with glide 0 it applies from that tick on."""
+    line, stings, level, hair = [], [], None, None
+
+    def put(tick, value, glide):
+        value = round(min(1.0, max(0.02, value)), 3)
+        if line and line[-1][0] == tick and abs(line[-1][1] - value) < 1e-6:
+            return
+        if line and line[-1][0] == tick and not glide and not line[-1][2]:
+            line[-1][1] = value  # two dynamics on one beat: the later one counts
+        else:
+            line.append([int(tick), value, int(glide)])
+
+    def close(tick, target=None):
+        nonlocal hair, level
+        began, way, start = hair
+        hair = None
+        if tick <= began:
+            return
+        if target is None or (target - start) * way <= 0:  # nothing to arrive at, or it points the other way
+            target = start + way * HAIRPIN_STEP
+        put(began, start, 0)
+        put(tick, target, 1)
+        level = line[-1][1]
+
+    def when(e):  # on one tick: first a hairpin ends, then a dynamic applies, then a hairpin begins
+        return (e[0], 0 if e[1] == "H" and not e[3] else 1 if e[1] == "A" else 2)
+
+    for e in sorted(events, key=when):
+        tick = e[0]
+        if e[1] == "H" and not e[3]:
+            if hair:
+                close(tick)
+        elif e[1] == "A":
+            kind = dynamic_kind(e[2])
+            if kind is None:
+                continue
+            if kind[0] == "sting":
+                stings.append((tick, "sfz"))
+                continue
+            if hair:
+                close(tick, kind[1])
+            put(tick, kind[1], 0)
+            level = kind[1]
+            if kind[0] == "drop":
+                put(tick + DROP_TICKS, kind[2], 1)
+                level = kind[2]
+        else:
+            if hair:
+                close(tick)
+            hair = (tick, e[2], MF if level is None else level)
+    if hair:
+        close(max(end, hair[0] + 1))
+    if line and line[0][0] > 0:
+        line.insert(0, [0, MF, 0])  # until the first dynamic, a score is played mezzo forte
+    return line, stings
+
+
+def midi_tracks(data):
+    """(ticks per quarter note, [{"notes": {(tick, pitch), ...}, "drums": bool, "end": last tick}, ...]) of a MIDI file."""
+    if data[:4] != b"MThd":
+        raise ValueError("Not a MIDI file")
+    hlen, _fmt, ntracks, div = struct.unpack(">IHHH", data[4:14])
+    p, out = 8 + hlen, []
+    for _ in range(ntracks):
+        if data[p:p + 4] != b"MTrk":
+            break
+        end = p + 8 + struct.unpack(">I", data[p + 4:p + 8])[0]
+        p += 8
+        tick = status = 0
+        notes, channels = set(), set()
+
+        def varlen():
+            nonlocal p
+            n = 0
+            while True:
+                c = data[p]
+                p += 1
+                n = (n << 7) | (c & 0x7F)
+                if not c & 0x80:
+                    return n
+
+        while p < end:
+            tick += varlen()
+            b = data[p]
+            p += 1
+            if b == 0xFF:
+                p += 1
+                size = varlen()  # on a line of its own: varlen() moves p itself
+                p += size
+            elif b in (0xF0, 0xF7):
+                size = varlen()
+                p += size
+            else:
+                if b & 0x80:
+                    status = b
+                else:
+                    p -= 1
+                hi, ch = status & 0xF0, status & 0x0F
+                if hi == 0x90 and data[p + 1] > 0:
+                    notes.add((tick, data[p]))
+                    channels.add(ch)
+                p += 1 if hi in (0xC0, 0xD0) else 2
+        out.append({"notes": notes, "drums": bool(channels) and channels <= {9}, "end": tick})
+        p = end
+    return div, out
+
+
+def read_performance(text):
+    """What perform.ily wrote, by staff number: {"kind", "group", "name", "notes", "events", "marks"}."""
+    staves = {}
+
+    def staff(n):
+        return staves.setdefault(int(n), {"kind": "Staff", "group": 0, "name": "", "notes": set(), "events": [],
+                                          "marks": [], "rolls": []})
+
+    for raw in text.splitlines():
+        part = raw.split()
+        if len(part) < 2 or not part[1].lstrip("-").isdigit():
+            continue
+        try:
+            s = staff(part[1])
+            if part[0] == "S":
+                s["kind"], s["group"] = part[2], int(part[3])
+            elif part[0] == "I":
+                quoted = re.findall(r'"([^"]*)"', raw)
+                s["name"] = (quoted[0] if quoted else "").strip()[:60]
+            elif part[0] == "N":
+                s["notes"].add((int(part[2]), int(part[3])))
+            elif part[0] == "A":
+                s["events"].append((int(part[2]), "A", part[3]))
+            elif part[0] == "H":
+                s["events"].append((int(part[2]), "H", 1 if int(part[3]) > 0 else -1, int(part[4])))
+            elif part[0] == "X" and part[3] in MARKS:
+                s["marks"].append((int(part[2]), part[3]))
+            elif part[0] == "T" and int(part[3]) in (8, 16, 32, 64):
+                s["rolls"].append((int(part[2]), int(part[3])))
+        except (IndexError, ValueError):
+            continue
+    return staves
+
+
+def performance(text, midi):
+    """Match what the score says to the tracks of its MIDI file. Returns {"div", "tracks": {"3": {"staff", "name",
+    "line": [[tick, level, glide], ...], "marks": [[tick, name], ...], "rolls": [[tick, ticks between strokes], ...]},
+    ...}} with ticks in the MIDI file's own units. A track that cannot be matched to a staff is left out and
+    plays the way plain MIDI says."""
+    staves = read_performance(text)
+    div, tracks = midi_tracks(midi)
+    scale = div * 4 / 1536.0  # perform.ily counts 1536 ticks to the whole note
+    # Staves braced together as one keyboard instrument (and a Dynamics line between them) share their dynamics.
+    for s in staves.values():
+        if s["group"] and not s["events"] and s["kind"] in STAFF_KINDS:
+            donor = next((o for o in staves.values() if o is not s and o["group"] == s["group"] and o["events"]), None)
+            if donor:
+                s["events"] = list(donor["events"])
+    pitched = sorted(n for n, s in staves.items() if s["kind"] in STAFF_KINDS and s["notes"])
+    drums = [n for n, s in sorted(staves.items()) if s["kind"] == "DrumStaff"]
+    used, out = set(), {}
+    for i, tr in enumerate(tracks):
+        if not tr["notes"]:
+            continue
+        n = None
+        if tr["drums"]:
+            n = next((x for x in drums if x not in used), drums[-1] if drums else None)
+        else:
+            best = None
+            for x in pitched:
+                want = {(round(t * scale), pitch) for t, pitch in staves[x]["notes"]}
+                reach = max(t for t, _ in want)
+                mine = {(t, pitch) for t, pitch in tr["notes"] if t <= reach} or tr["notes"]
+                both = len(want & mine)
+                score = max(both / len(want), both / len(mine))
+                rank = (-round(score, 3), x in used, x)
+                if score >= 0.5 and (best is None or rank < best[0]):
+                    best = (rank, x)
+            n = best[1] if best else None
+        if n is None:
+            continue
+        used.add(n)
+        s = staves[n]
+        line, stings = level_line([(round(e[0] * scale), *e[1:]) for e in s["events"]], tr["end"])
+        marks = sorted({(round(t * scale), name) for t, name in s["marks"]} | set(stings))
+        rolls = sorted({(round(t * scale), round(div * 4 / kind)) for t, kind in s["rolls"]})  # (where, ticks between strokes)
+        out[str(i)] = {"staff": n, "name": s["name"], "line": line, "marks": [list(m) for m in marks],
+                       "rolls": [list(r) for r in rolls]}
+    return {"div": div, "tracks": out}
+
+
 # ---------------------------------------------------------------- Claude, the composer
 
-SYSTEM = (WEB / "compose_prompt.txt").read_text().strip().replace("{LY_NAMES}", ", ".join(f'"{n}"' for n in GM_LY))
+_SYSTEM = (WEB / "compose_prompt.txt").read_text().strip()
+# Instruments beyond the orchestra and the band that are worth pointing out to the composer, when they are here.
+COLOURS = (("pads and atmospheres", ("pad 2 (warm)", "pad 5 (bowed)", "pad 7 (halo)", "fx 4 (atmosphere)", "fx 2 (soundtrack)")),
+           ("bells", ("tubular bells", "music box", "tinkle bell")),
+           ("drums with a pitch of their own", ("taiko drum", "melodic tom", "reverse cymbal")),
+           ("instruments from around the world", ("sitar", "koto", "kalimba", "pan flute", "shakuhachi", "steel drums")))
+
+
+# What the composer is told about drums when the recorded drums and percussion are on this computer.
+_DRUMS = (
+    '- The drums are real recordings, each with soft and loud takes, so a dynamic changes a drum\'s tone as well as its '
+    'loudness. A DrumStaff plays a studio drum kit. In orchestral music (a part without hi-hat) it plays an orchestra\'s '
+    'percussion instead: there bd is the concert bass drum, sn the concert snare drum, cymc a pair of crash cymbals, '
+    'cymcb and cymr the suspended cymbal (roll it with cymr1:32), cymch the tam-tam (a large gong), cyms a choked crash, '
+    'and the toms (tomfl, tomfh, toml, tomml, tommh, tomh) are large low drums that suit film music. To choose the kit '
+    'yourself give the DrumStaff a midiInstrument: "standard kit", "room kit", "power kit" (rock), "jazz kit", "brush kit", '
+    '"electronic kit", "tr-808 kit" or "orchestra kit". Hand percussion is recorded too, in every kit: tamb, trim and trio '
+    '(muted and open triangle), cb, cl, wbh, wbl, boh, bol, cghm, cgho, cgl (congas), timh, timl, agh, agl, cab, mar, guis, '
+    'guil, vibs. Write Latin and world percussion with these rather than with toms.\n')
+_KITS = '"808", "tight", "lofi" (drum machines)'
+_KITS_REAL = ' and the recorded kits "studio", "room", "power", "jazz", "brush", "electronic" and "tr808"'
+_FILM_REAL = (
+    ' Recorded sounds, single ones at their "bar": gong (a tam-tam; a higher "level" strikes it harder), bigdrum (a huge '
+    'low drum; "size" small, big or huge), chimes (wind chimes rising, "tone" dark for falling, "size" small for a bell '
+    'tree), scrape (a scraped gong: an eerie metallic shriek). And two that last for their "bars": cymbal (a roll on a '
+    'suspended cymbal that grows and is loudest where it ENDS, like riser and swell) and bow (a bowed cymbal: a thin, '
+    'unsettling tone).')
+
+
+def system_prompt():
+    """What the composer is told. Only instruments whose recordings are on this computer are offered (the grand
+    piano is built in), so a score never asks for a sound that would have to be fetched or faked."""
+    have = [n for i, n in enumerate(GM_LY) if i == 0 or sound_file(GM_SAMPLE[i]).exists()]
+    groups = []
+    for what, names in COLOURS:
+        here = [n for n in names if n in have]
+        if here:
+            groups.append("%s (%s)" % (what, ", ".join('"%s"' % n for n in here)))
+    colours = ("- Besides the orchestra and the band there are %s. Use them where their colour helps.\n" % ", ".join(groups)) if groups else ""
+    real = percussion.ready()   # the recorded drums and percussion: more to write for, and more film sounds
+    text = _SYSTEM.replace("{LY_NAMES}", ", ".join('"%s"' % n for n in have)).replace("{COLOURS}", colours)
+    return (text.replace("{DRUMS}", _DRUMS if real else "").replace("{FILM_REAL}", _FILM_REAL if real else "")
+            .replace("{KITS}", _KITS + (_KITS_REAL if real else "")))
 _briefs = json.loads((WEB / "ensembles.json").read_text())
 ENSEMBLES, TEXT_BRIEF = _briefs["ensembles"], _briefs["text_brief"]
 LY_BLOCK = re.compile(r"```(?:lilypond|ly)[^\n]*\n([\s\S]*?)```", re.I)
 BEAT_BLOCK = re.compile(r"```beat[^\n]*\n([\s\S]*?)```", re.I)
+FILM_BLOCK = re.compile(r"```film[^\n]*\n([\s\S]*?)```", re.I)
 
 
 def ask_claude(prompt, model=""):
-    args = ["-p", "--system-prompt", SYSTEM, "--tools", "", "--strict-mcp-config", "--no-session-persistence",
+    args = ["-p", "--system-prompt", system_prompt(), "--tools", "", "--strict-mcp-config", "--no-session-persistence",
             "--disable-slash-commands"]
     if model and re.match(r"^[a-z0-9.\-]+$", model, re.I):
         args += ["--model", model]
@@ -303,7 +594,8 @@ def text_prompt(text, filename, style, message):
 
 
 def compose(body):
-    """One turn with the composer. Returns {reply, ly, beat, render, fixed, title}; ly is None for a plain answer."""
+    """One turn with the composer. Returns {reply, ly, beat, film, render, fixed, title}; ly is None for a plain answer.
+    film is the layer of film sounds the answer carries (clean_film), None when it carries none."""
     message, model, ensemble = str(body.get("message") or ""), str(body.get("model") or ""), body.get("ensemble") or ""
     band = ("\nInstrumentation the user picked: %s If the user asks for a change to an existing score, keep its instruments "
             "unless they ask for different ones." % ENSEMBLES[ensemble]) if ENSEMBLES.get(ensemble) else ""
@@ -316,6 +608,7 @@ def compose(body):
         prompt = "\n".join(x for x in [
             "Current score in the editor:", "```lilypond", str(body.get("ly") or "").strip() or "% (empty)", "```", "",
             "Drum machine right now: " + json.dumps(body.get("beat") or {}),
+            "Film sounds right now: " + json.dumps(clean_film(body.get("film")) or {}),
             ("Keyboard sound selected: " + sound) if sound else "",
             ("\nEarlier in this conversation:\n" + convo) if convo else "",
             band,
@@ -341,12 +634,19 @@ def compose(body):
             beat = json.loads(bm.group(1))
         except ValueError:
             beat = None
-    reply = re.sub(r"\n{3,}", "\n\n", BEAT_BLOCK.sub("", LY_BLOCK.sub("", answer))).strip()
+    film = None
+    fm = FILM_BLOCK.search(answer)
+    if fm:
+        try:
+            film = clean_film(json.loads(fm.group(1)))
+        except ValueError:
+            film = None
+    reply = re.sub(r"\n{3,}", "\n\n", FILM_BLOCK.sub("", BEAT_BLOCK.sub("", LY_BLOCK.sub("", answer)))).strip()
     title = ""
     if new_ly:
         t = re.search(r'\btitle\s*=\s*"([^"]+)"', new_ly)
         title = t.group(1) if t else ""
-    return {"reply": reply, "ly": new_ly, "beat": beat, "render": render, "fixed": fixed, "title": title}
+    return {"reply": reply, "ly": new_ly, "beat": beat, "film": film, "render": render, "fixed": fixed, "title": title}
 
 
 # ---------------------------------------------------------------- reading a MIDI file
@@ -442,6 +742,7 @@ ID = re.compile(r"^[a-f0-9]{10}$")
 _piece_lock = threading.RLock()
 _render_locks = {}
 BEAT_TRACKS = ("kick", "snare", "hat", "openhat", "clap", "tom", "rim", "cowbell")
+BEAT_KITS = ("808", "tight", "lofi") + tuple(k[0] for k in percussion.FLUID_KITS) + ("orchestra",)   # made by the app, then recorded
 
 
 def safe_name(n):
@@ -506,7 +807,7 @@ def _quiet(fn, *a):
 def ensure_render(pid):
     """The engraving of a piece, made once and kept until its score changes."""
     piece = read_piece(pid)
-    digest = hashlib.sha1((piece.get("ly") or "").encode()).hexdigest()
+    digest = hashlib.sha1((ENGRAVING + "|" + (piece.get("ly") or "")).encode()).hexdigest()
     with _locks_guard:
         lock = _render_locks.setdefault(pid, threading.Lock())
     with lock:
@@ -533,7 +834,7 @@ def delete_piece(pid):
 
 _prints = {}
 _DESK = {"bright": 18000, "reso": 0.7, "kdrive": 0, "chorus": 0, "echo": 0, "fb": 0.35, "room": 0.2, "dlevel": 0.9,
-         "dtone": 18000, "ddrive": 0, "dtune": 0, "droom": 0, "decho": 0, "echoTime": 0.75,
+         "dtone": 18000, "ddrive": 0, "dtune": 0, "droom": 0, "decho": 0, "echoTime": 0.75, "film": 1,
          **{"mix_" + k: 1 for k in ("kick", "snare", "hat", "openhat", "clap", "tom", "rim", "cowbell")}}
 
 
@@ -556,6 +857,13 @@ def fingerprint(pid):
     beat = clean_beat(d.get("beat"), (d.get("beat") or {}).get("tempo") or d.get("scoreBpm") or 92)
     heard = [(d.get("ly") or "").strip(), d.get("sound") or "grand", d.get("scoreBpm"), bool(d.get("withBeat")),
              beat, {k: float("%.4g" % float(v)) for k, v in sorted(desk.items())}]
+    # Newer things are only counted when a piece uses them, so the code of an older piece stays what it was.
+    film = clean_film(d.get("film")) if d.get("withFilm", True) else None
+    space = (d.get("desk") or {}).get("space")
+    if film:
+        heard.append(film)
+    if space in SPACES and space != "hall":
+        heard.append(space)
     code = hashlib.sha1(json.dumps(heard, sort_keys=True).encode()).hexdigest()[:12]
     _prints[pid] = (mtime, code)
     return code
@@ -578,7 +886,7 @@ def clean_beat(b, tempo):
         swing = max(0.0, min(60.0, float(b.get("swing") or 0)))
     except (TypeError, ValueError):
         swing = 0.0
-    return {"tempo": tempo, "swing": swing, "kit": b.get("kit") if b.get("kit") in ("808", "tight", "lofi") else "808",
+    return {"tempo": tempo, "swing": swing, "kit": b.get("kit") if b.get("kit") in BEAT_KITS else "808",
             "bars": bars, "tracks": full}
 
 
@@ -586,9 +894,59 @@ def beat_has_hits(beat):
     return any(re.search(r"[xXo]", v or "") for v in ((beat or {}).get("tracks") or {}).values())
 
 
+# The film sounds the sound engine can make (music/audio.js, FILM) and the spaces it can put the music in.
+FILM_SOUNDS = ("drone", "riser", "swell", "impact", "boom", "heartbeat", "pulse", "tick", "wind", "rain", "waves",
+               "crackle", "rumble", "whoosh", "shimmer", "bell", "thunder") + percussion.FILM_SOUNDS   # made by the app, then recorded
+FILM_TONES = ("dark", "warm", "eerie", "bright", "air", "tone", "both")
+SPACES = ("room", "hall", "cathedral")
+
+
+def clean_film(f):
+    """A layer of film sounds as a piece stores it: {"space": ..., "layer": [{"sound", "bar", ...}, ...]}, with
+    everything unknown dropped and every number inside its range. None when nothing usable is left."""
+    if not isinstance(f, dict):
+        return None
+
+    def num(x, lo, hi, digits=3):
+        try:
+            v = float(x)
+        except (TypeError, ValueError):
+            return None
+        return round(min(hi, max(lo, v)), digits) if v == v else None  # v != v is NaN
+
+    layer = []
+    for e in (f.get("layer") if isinstance(f.get("layer"), list) else [])[:60]:
+        if not isinstance(e, dict):
+            continue
+        sound = re.sub(r"[^a-z]", "", str(e.get("sound") or "").lower())
+        if sound not in FILM_SOUNDS:
+            continue
+        item = {"sound": sound, "bar": num(e.get("bar"), 1, 4000) or 1}
+        for key, lo, hi in (("bars", 0.25, 512), ("level", 0, 1.5), ("from", 0, 1.5), ("to", 0, 1.5), ("bpm", 36, 170)):
+            v = num(e.get(key), lo, hi)
+            if e.get(key) is not None and v is not None:
+                item[key] = v
+        rate = num(e.get("rate"), 1, 16, 0)
+        if e.get("rate") is not None and rate is not None:
+            item["rate"] = int(rate)
+        note = str(e.get("note") or "").strip()
+        if re.match(r"^[A-Ga-g][#b]?-?\d$", note):
+            item["note"] = note[0].upper() + note[1:]
+        if e.get("tone") in FILM_TONES:
+            item["tone"] = e["tone"]
+        if e.get("size") in ("small", "big", "huge"):
+            item["size"] = e["size"]
+        layer.append(item)
+    space = f.get("space") if f.get("space") in SPACES else None
+    if not layer and not space:
+        return None
+    return {**({"space": space} if space else {}), "layer": layer}
+
+
 # ---------------------------------------------------------------- a piece as an audio file
 
 RENDERS = {}  # token -> {"spec", "done", "wav", "info", "error"} while a hidden browser is working on it
+SOUND_ENGINE = 3  # raise it when music/audio.js changes how pieces sound: audio kept from before is then made again
 _render_one = threading.Lock()  # one hidden browser at a time
 MAX_SECONDS = 20 * 60
 
@@ -633,9 +991,13 @@ def render_audio(spec, wav, timeout=900):
 def piece_spec(piece, render, seconds=None, rate=None, tail=3.5):
     """Everything the render page needs to play a piece the way the gallery plays it. `rate` plays it faster or
     slower than written; `seconds` asks for the music itself to last that long (rate is worked out from it)."""
-    return {"name": piece.get("name") or "", "midi": render.get("midi"), "beat": piece.get("beat") or {},
-            "desk": piece.get("desk") or {}, "sound": piece.get("sound") or "grand", "withBeat": bool(piece.get("withBeat")),
-            "scoreBpm": piece.get("scoreBpm"), "seconds": seconds, "rate": rate, "tail": tail}
+    return {"name": piece.get("name") or "", "midi": render.get("midi"), "perf": render.get("perf"),
+            "beat": piece.get("beat") or {}, "desk": piece.get("desk") or {}, "sound": piece.get("sound") or "grand",
+            "withBeat": bool(piece.get("withBeat")), "film": clean_film(piece.get("film")),
+            "withFilm": bool(piece.get("withFilm", True)), "scoreBpm": piece.get("scoreBpm"), "seconds": seconds,
+            "rate": rate, "tail": tail,
+            # audio kept from before the recorded drums arrived (or from an older cut of them) is made again
+            "engine": "%d%s" % (SOUND_ENGINE, "+drums%d" % percussion.BUILD if percussion.ready() else "")}
 
 
 def piece_audio(pid, seconds=None, rate=None, tail=3.5):
@@ -684,11 +1046,12 @@ def encode(wav, out, loud=True, seconds=None, fade=0.0):
 
 STYLE_TEMPO = {"film": 96, "orchestra": 96, "strings": 84, "quartet": 88, "chamber": 96, "brass": 100, "choir": 76,
                "piano": 84, "jazz": 112, "rock": 120, "pop": 110, "electronic": 124, "lofi": 80, "latin": 104,
-               "folk": 108, "world": 96, "auto": 96}
+               "folk": 108, "world": 96, "auto": 96, "song": 100}
 STYLE_LABEL = {"film": "Film score", "orchestra": "Full orchestra", "strings": "String orchestra", "quartet": "String quartet",
                "piano": "Solo piano", "chamber": "Wind quintet", "brass": "Brass ensemble", "choir": "Choir",
                "jazz": "Jazz combo", "rock": "Rock band", "pop": "Pop band", "electronic": "Electronic",
-               "lofi": "Lo-fi hip-hop", "latin": "Latin", "folk": "Folk and celtic", "world": "World", "auto": "Let Claude choose"}
+               "lofi": "Lo-fi hip-hop", "latin": "Latin", "folk": "Folk and celtic", "world": "World", "auto": "Let Claude choose",
+               "song": "A song with singing (made on this computer)"}
 
 
 def pick_tempo(shot_seconds, style="film"):
@@ -747,6 +1110,10 @@ def cue_message(plan, sections, feel="", note="", kind="film"):
         "- Start with music in the first bar (no long empty opening) and end with a clear final cadence in the last bar, "
         "holding the last chord to the end of that bar.",
         "- It is background music for pictures: memorable, but leave space, and keep one clear idea developing through it.",
+        "- It is for a film, so add a ```film block with film sounds on the bars where the picture changes: for example a "
+        "drone or wind under a quiet stretch, a riser or a swell that ends where the picture turns, an impact on that turn, a "
+        "heartbeat or a pulse where the tension grows. Five to ten sounds are plenty, and they must suit the feeling of the "
+        "film: a gentle or funny film wants few and soft ones (a shimmer, a whoosh, a soft boom), a dark one can carry more.",
     ]
     if sections:
         lines += ["", "How the picture goes, so the music can turn with it. The picture changes at these points:"]
@@ -777,7 +1144,7 @@ def write_cue(plan, style, message, model="", on_stage=None):
     target = plan["bars"] * 240.0 / plan["tempo"]
     say("Claude is composing")
     r = compose({"message": message, "ensemble": style, "model": model})
-    tries = 1
+    tries, film = 1, r.get("film")
     while True:
         if not r.get("ly"):
             raise RuntimeError("Claude answered without writing a score: " + (r.get("reply") or "")[:300])
@@ -793,19 +1160,27 @@ def write_cue(plan, style, message, model="", on_stage=None):
         r = compose({"model": model, "ensemble": style, "ly": r["ly"], "message":
                      "This piece lasts %.0f seconds at its tempo, but it must last %.0f seconds: exactly %d bars of 4/4 at "
                      "\\tempo 4 = %d in every part. Keep the music and its instruments, and add or remove bars until it is "
-                     "exactly that long. Return the complete corrected file."
-                     % (facts["total"], target, plan["bars"], plan["tempo"])})
+                     "exactly that long. Return the complete corrected file, and the film block again with its sounds moved "
+                     "to fit." % (facts["total"], target, plan["bars"], plan["tempo"]), "film": film})
+        film = r.get("film") or film
     bpm = int(round(facts["bpm"]))
     beat = clean_beat(r.get("beat"), bpm) if r.get("beat") else clean_beat({}, bpm)
     beat["tempo"] = bpm
-    return {"name": r.get("title") or "Soundtrack", "ly": r["ly"].strip() + "\n", "sound": "grand", "beat": beat, "desk": {},
-            "scoreBpm": bpm, "withBeat": beat_has_hits(beat), "facts": facts, "reply": r.get("reply") or "", "tries": tries}
+    # The place the music sounds in is one of the desk's settings; the composer names it with the film sounds.
+    desk = {"space": film["space"]} if film and film.get("space") else {}
+    if film:
+        last = plan["bars"] + 1  # nothing may start after the music is over
+        film = clean_film({"layer": [e for e in film["layer"] if e["bar"] < last]})
+    return {"name": r.get("title") or "Soundtrack", "ly": r["ly"].strip() + "\n", "sound": "grand", "beat": beat, "desk": desk,
+            "film": film, "withFilm": True, "scoreBpm": bpm, "withBeat": beat_has_hits(beat), "facts": facts,
+            "reply": r.get("reply") or "", "tries": tries}
 
 
 # ---------------------------------------------------------------- web
 
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-        ".mp3": "audio/mpeg", ".svg": "image/svg+xml", ".json": "application/json", ".md": "text/plain; charset=utf-8"}
+        ".mp3": "audio/mpeg", ".svg": "image/svg+xml", ".json": "application/json", ".md": "text/plain; charset=utf-8",
+        ".flac": "audio/flac"}
 
 
 def _send(h, code, body, ctype="application/json", headers=None):
@@ -851,6 +1226,16 @@ def handle_get(h, path, query):
                 _send_path(h, get_sound(m.group(1)), cache="max-age=604800")
             except ValueError as e:
                 _send(h, 404, {"error": str(e)})
+            return True
+        if rest == "percussion/index.json":   # the recorded drums: which sound is which drum
+            if percussion.ready():
+                _send_path(h, percussion.INDEX)
+            else:
+                _send(h, 404, {"error": "The recorded drums are not on this computer."})
+            return True
+        m = re.match(r"^percussion/sounds/([a-z0-9_]+)\.flac$", rest)
+        if m:
+            _send_path(h, percussion.sound_file(m.group(1)), cache="max-age=604800")
             return True
         rel = "index.html" if rest == "" else "gallery.html" if rest == "gallery" else rest
         f = (WEB / rel).resolve()
@@ -903,7 +1288,8 @@ def _api_get(h, p):
         return True
     r = ensure_render(pid)
     if action == "render":
-        _send(h, 200, {"ok": r["ok"], "midi": r.get("midi"), "pages": len(r.get("svgs") or []), "log": r.get("log")})
+        _send(h, 200, {"ok": r["ok"], "midi": r.get("midi"), "perf": r.get("perf"), "pages": len(r.get("svgs") or []),
+                       "log": r.get("log")})
         return True
     files = {"cover.svg": ((r.get("svgs") or [None])[0], "image/svg+xml"),
              "file.pdf": (base64.b64decode(r["pdf"]) if r.get("pdf") else None, "application/pdf"),
@@ -958,6 +1344,11 @@ def handle_post(h, path, raw):
                 return _send(h, 400, {"error": "Downloading sounds is switched off."})
             fetch_sounds()
             return _send(h, 200, {"ok": True, **FETCH})
+        if p == "percussion/fetch":
+            if NO_FETCH and percussion.missing():
+                return _send(h, 400, {"error": "Downloading sounds is switched off."})
+            percussion.start()
+            return _send(h, 200, {"ok": True, **percussion.status()})
         m = re.match(r"^pieces/([a-f0-9]{10})/delete$", p)
         if m:
             delete_piece(m.group(1))
