@@ -120,7 +120,11 @@ try {
     if ($freeGb -ge 70) { Ok "$freeGb GB of free disk space" }
     else { Warn "$freeGb GB of free disk space. A complete install takes about 55 GB (models 43, writing model 7, engine and tools 5)." }
 } catch { }
-if ($Root.Length -gt 60) { Warn "The app's folder has a long path ($Root). Windows limits how long a path may be; a short folder such as C:\penguin-movie-studio is safer." }
+# Windows limits how long a path may be unless that limit was lifted on this PC (a setting in its registry).
+$longPaths = 0
+try { $longPaths = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -ErrorAction Stop).LongPathsEnabled } catch { }
+if (($Root.Length -gt 60) -and ($longPaths -ne 1)) { Warn "The app's folder has a long path ($Root). Windows limits how long a path may be; a short folder such as C:\penguin-movie-studio is safer." }
+if ($Root -match "[^\x20-\x7E]") { Warn "The app's folder has an accent or another special letter in its path ($Root). Not every tool the app uses is known to cope with that; a folder such as C:\penguin-movie-studio is safer." }
 
 # --- The tools (winget installs them) --------------------------------------------------------
 if (Have "winget") { Ok "winget (the Windows package manager)" }
@@ -237,7 +241,8 @@ else { Write-Host "  - GGUF add-on: not installed. Only needed if you choose a G
 
 # --- Music: Claude Code composes, a Chrome-family browser turns the score into sound ---------
 if (Have "claude") {
-    Ok "Claude Code $(& claude --version 2>$null | Select-Object -First 1)"
+    $claudeVersion = ("$(& claude --version 2>$null | Select-Object -First 1)" -split " ")[0]
+    Ok "Claude Code $claudeVersion"
     $status = (@(& claude auth status 2>$null) -join " ")
     if ($status -match '"loggedIn":\s*true') { Ok "Claude Code is signed in" }
     elseif ($Check -or $NoQuestions) { Warn "Claude Code is not signed in. Open PowerShell, run claude once and sign in." }

@@ -25,8 +25,14 @@ jobs:
     env:
       STORYBOARD_NO_PAUSE: "1"     # setup.bat does not wait for a key at the end
       STORYBOARD_NO_BROWSER: "1"   # the app does not open a browser window
+    defaults:
+      run:
+        # A folder name like the ones on real computers: spaces, brackets and an accent.
+        working-directory: "Penguin Movie Studio (café)"
     steps:
       - uses: actions/checkout@v7
+        with:
+          path: "Penguin Movie Studio (café)"
 
       - name: What this machine has
         shell: powershell
@@ -54,7 +60,7 @@ jobs:
 
       - name: Run setup.bat
         shell: cmd
-        run: call setup.bat -Yes -NoQuestions -Claude
+        run: call setup.bat -Yes -NoQuestions -Claude -Gguf
 
       - name: Run setup.bat again, only checking
         shell: cmd
@@ -62,7 +68,7 @@ jobs:
 
       - name: Try the app (windows/check.py)
         shell: cmd
-        run: ComfyUI\.venv\Scripts\python.exe windows\check.py --engine --claude --download
+        run: ComfyUI\.venv\Scripts\python.exe windows\check.py --engine --claude --ollama --gguf --download
 
       - name: Start the app the way a person does (Start Storyboard.bat)
         shell: powershell
@@ -94,5 +100,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: windows-check-logs
-          path: storyboard/data/*.log
+          path: "Penguin Movie Studio (café)/storyboard/data/*.log"
           if-no-files-found: ignore

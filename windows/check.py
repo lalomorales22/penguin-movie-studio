@@ -14,8 +14,10 @@ picture; the Models page reads this computer's drives; a second copy of the app 
 helper runs. With --engine the app also starts the picture and video engine (on the processor, which is enough to
 see that it starts) and the engine is asked for the app's own add-on.
 
-Two more options are there for GitHub's machines, which are thrown away after each run:
+More options are there for GitHub's machines, which are thrown away after each run:
   --claude     Claude Code has to be found (the workflow installs it first)
+  --ollama     Ollama has to be found and running (setup installs it)
+  --gguf       the engine has to load the GGUF add-on (setup -Gguf installs it)
   --download   really download from Hugging Face through the Models page: the Fast video add-on (332 MB) into the
                engine's models folder, and then the start of the Video kit, which is stopped after a few megabytes
                to see that stopping works. Do not use it on a computer you keep: it leaves those files there.
@@ -46,6 +48,8 @@ if os.name == "nt" and not sys.flags.utf8_mode:  # the app's files are UTF-8 (se
 ENGINE = "--engine" in sys.argv
 KEEP = "--keep" in sys.argv
 CLAUDE = "--claude" in sys.argv
+OLLAMA = "--ollama" in sys.argv
+GGUF = "--gguf" in sys.argv
 DOWNLOAD = "--download" in sys.argv
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 RESULTS = []
@@ -164,7 +168,12 @@ def prepare(data):
 
 def main():
     print(f"Checking Penguin's Storyboard on {platform.system()} {platform.release()} with Python {platform.python_version()}")
-    data = Path(tempfile.mkdtemp(prefix="storyboard-check-"))
+    # The throw-away data folder sits where the real one does, inside the app's folder: if that folder's name has
+    # spaces or accents, every path the app hands to ffmpeg and the others has them too, as on a real computer.
+    home = APP / "data"
+    made_home = not home.exists()
+    home.mkdir(parents=True, exist_ok=True)
+    data = Path(tempfile.mkdtemp(prefix=".check-", dir=home))
     # The app's own models.py, loaded here for two things: on Windows, loading it puts the programs that setup
     # installed a moment ago on the PATH (this window may be older than they are), and one check asks it questions.
     os.environ["STORYBOARD_DATA"] = str(data)   # it reads its settings from here, so it must be set first
@@ -221,6 +230,18 @@ def main():
             assert isinstance(places["options"], list)
             engine = next((k for k in st["kits"] if k["kind"] == "engine"), None)
             return f"{len(st['kits'])} kits, engine: {engine['state'] if engine else '?'}, {len(places['options'])} places to save"
+
+        if OLLAMA:
+            @check("the script writer's program (Ollama) is found and running")
+            def _():
+                deadline = time.time() + 90
+                while True:
+                    w = next(k for k in web.get("/models/api/status")["kits"] if k["id"] == "writer")["writer"]
+                    if w["running"]:
+                        return f"running, {len(w['models'])} writing models on this computer"
+                    if time.time() > deadline:
+                        raise RuntimeError("installed but not running" if w["installed"] else "Ollama was not found")
+                    time.sleep(2)
 
         tools = {}
 
@@ -335,7 +356,12 @@ def main():
                             assert "StoryboardDecodeAudio" in json.loads(r.read()), "the app's own add-on is not loaded"
                         with OPENER.open(env["COMFY_URL"] + "/system_stats", timeout=60) as r:
                             stats = json.loads(r.read())
-                        return f"ComfyUI {stats['system'].get('comfyui_version', '?')} is up with the app's add-on"
+                        gguf = ""
+                        if GGUF:
+                            with OPENER.open(env["COMFY_URL"] + "/object_info/CLIPLoaderGGUF", timeout=60) as r:
+                                assert "CLIPLoaderGGUF" in json.loads(r.read()), "the GGUF add-on is not loaded"
+                            gguf = " and the GGUF add-on"
+                        return f"ComfyUI {stats['system'].get('comfyui_version', '?')} is up with the app's add-on{gguf}"
                     time.sleep(3)
                 log = data / "comfyui.log"
                 tail = log.read_text(encoding="utf-8", errors="replace")[-1500:] if log.exists() else "(no engine log)"
@@ -416,7 +442,16 @@ def main():
         if KEEP:
             print("\nThe data folder was kept:", data)
         else:
-            shutil.rmtree(data, ignore_errors=True)
+            for _ in range(20):   # (Windows lets go of a stopped program's files a moment after it is gone)
+                shutil.rmtree(data, ignore_errors=True)
+                if not data.exists():
+                    break
+                time.sleep(0.5)
+            if made_home:
+                try:
+                    home.rmdir()   # only if nothing else is in it
+                except OSError:
+                    pass
     print(f"\n{sum(ok for ok, _ in RESULTS)} of {len(RESULTS)} checks passed." + ("" if not bad else " Failed: " + "; ".join(bad)))
     raise SystemExit(1 if bad or not RESULTS else 0)
 

@@ -91,8 +91,9 @@ xattr -dr com.apple.quarantine .
 
 ## Windows (experimental)
 
-The app was built on a Mac. The Windows version is new: it was written without a Windows PC at hand, and nobody
-has made a picture or a video with it on Windows yet. If you try it, please
+The app was built on a Mac, and so was its Windows version. GitHub's Windows machines install it on a fresh Windows and
+try it after every change (the end of this section says what they try). They have no graphics card, though, so
+nobody has made a picture or a video with it on Windows yet. If you try it, please
 [open an issue](https://github.com/lalomorales22/penguin-movie-studio/issues) and say what happened and which
 graphics card you have.
 
@@ -101,23 +102,31 @@ Mac. The models were chosen for 24 GB of memory. A card with 24 GB should hold t
 keeps part of each model in normal memory, which is slower (32 GB of normal memory is safer then). None of that
 has been measured. Cards from AMD and Intel are not set up.
 
-1. Get the folder: `git clone` it, or download the ZIP from GitHub and unpack it. A short path without accents,
-   such as `C:\penguin-movie-studio`, avoids trouble.
+1. Get the folder. For now the Windows version is on its own branch, `windows-support`: download
+   [the ZIP of that branch](https://github.com/lalomorales22/penguin-movie-studio/archive/refs/heads/windows-support.zip)
+   and unpack it, or run `git clone -b windows-support https://github.com/lalomorales22/penguin-movie-studio.git`.
+   A short path without accents, such as `C:\penguin-movie-studio`, avoids trouble.
 2. Double-click `setup.bat`. It installs what is missing with winget (git, ffmpeg, uv, Ollama, the Microsoft
-   Visual C++ runtime), downloads LilyPond into the app's own `tools` folder, sets up the engine with the PyTorch
-   build for NVIDIA cards and, if you want music, installs Claude Code. `setup.bat -Check` only reports what is
-   there. Windows may warn that the file came from the internet: choose More info, then Run anyway.
+   Visual C++ runtime), downloads LilyPond into the app's own `tools` folder, gives the engine a Python of its
+   own with the PyTorch build for NVIDIA cards and, if you want music, installs Claude Code. Windows may warn
+   that the file came from the internet (choose More info, then Run anyway) and may ask for permission while
+   things install. `setup.bat -Check` only reports what is there.
 3. Double-click `Start Storyboard.bat`. From there everything is as described above: open **Models**, download
    the kits, press **Finish setting up Fast video**.
 
 For an NVIDIA card older than the 20 series, ComfyUI asks for an older PyTorch build:
 `setup.bat -TorchIndex cu126 -PythonVersion 3.12`.
 
-What is checked on Windows: `windows/check.py` starts the app on throw-away data and tries everything that
-needs no graphics card: the pages, LilyPond, turning a score into an audio file in a hidden browser, joining
-clips with ffmpeg, starting the engine. GitHub's Windows machines run the installer and then that check after
-every change to the Windows version (the Actions tab shows the last run). What is not checked: drawing pictures,
-filming clips, songs, the sounds of the shots, and how long anything takes.
+What is checked on Windows, on GitHub's machines (the Actions tab shows the last run): `setup.bat` installs
+what such a machine is missing, which is ffmpeg, uv, Ollama, LilyPond, the engine with its Python parts, and
+Claude Code (git and the Visual C++ runtime are already on those machines). Then `windows/check.py` starts the
+app on throw-away data and tries what needs no graphics card: the pages, LilyPond, turning a score into an audio
+file in a hidden browser, joining clips with ffmpeg, a picture of your own as a character picture, keeping the PC
+awake, starting the engine (on the processor), downloading a model file from Hugging Face through the Models
+page, and stopping a download. Last, `Start Storyboard.bat` starts the app.
+
+What is not checked: drawing pictures, filming clips, finishing Fast video, songs, the sounds of the shots,
+writing a script, composing music (it needs your Claude sign-in), and how long anything takes.
 
 ## How long things take
 
