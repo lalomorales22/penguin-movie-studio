@@ -834,9 +834,9 @@ api('/api/status').then(s => {
   const say = [];
   if (!s.lilypond) say.push('LilyPond is not installed, so scores cannot be engraved or played.');
   if (!s.claude) say.push('Claude Code is not installed, so composing with Claude will not work.');
-  else if (s.claudeSignedIn === false) say.push('Claude Code is not signed in. Open Terminal, run <code>claude</code> once and sign in.');
+  else if (s.claudeSignedIn === false) say.push('Claude Code is not signed in. Open ' + (s.system === 'Windows' ? 'PowerShell' : 'Terminal') + ', run <code>claude</code> once and sign in.');
   if (!say.length) return;
-  $('setupNote').innerHTML = say.join(' ') + ' To fix it, double-click <code>setup.command</code> in the app’s folder, then start the app again.';
+  $('setupNote').innerHTML = say.join(' ') + ' To fix it, double-click <code>' + (s.system === 'Windows' ? 'setup.bat' : 'setup.command') + '</code> in the app’s folder, then start the app again.';
   $('setupNote').hidden = false;
 }).catch(() => {});
 showIdeas();

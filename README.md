@@ -54,7 +54,7 @@ can be downloaded, but the movie maker only knows how to drive the families its 
 ## What you need
 
 - An Apple Silicon Mac. This was built and tested on one Mac mini (M4, 24 GB of memory). It has not been run
-  on Intel Macs, Windows or Linux.
+  on Intel Macs or Linux. For Windows there is a first, experimental version: see [Windows](#windows-experimental).
 - 24 GB of memory or more. The video model runs right at that limit.
 - About 65 GB of free disk space. A complete install measured 55 GB: 43 GB for the picture and video models,
   7 GB for the writing model and 5 GB for the engine and its tools. The rest is room to work. The extra kits
@@ -88,6 +88,45 @@ files because they came from the internet. Either allow each one under System Se
 ```bash
 xattr -dr com.apple.quarantine .
 ```
+
+## Windows (experimental)
+
+The app was built on a Mac, and so was its Windows version. GitHub's Windows machines install it on a fresh Windows and
+try it after every change (the end of this section says what they try). They have no graphics card, though, so
+nobody has made a picture or a video with it on Windows yet. If you try it, please
+[open an issue](https://github.com/lalomorales22/penguin-movie-studio/issues) and say what happened and which
+graphics card you have.
+
+What you need: Windows 10 or 11, an NVIDIA graphics card with a current driver, and the same disk space as on a
+Mac. The models were chosen for 24 GB of memory. A card with 24 GB should hold them; with 12 to 16 GB the engine
+keeps part of each model in normal memory, which is slower (32 GB of normal memory is safer then). None of that
+has been measured. Cards from AMD and Intel are not set up.
+
+1. Get the folder. For now the Windows version is on its own branch, `windows-support`: download
+   [the ZIP of that branch](https://github.com/lalomorales22/penguin-movie-studio/archive/refs/heads/windows-support.zip)
+   and unpack it, or run `git clone -b windows-support https://github.com/lalomorales22/penguin-movie-studio.git`.
+   A short path without accents, such as `C:\penguin-movie-studio`, avoids trouble.
+2. Double-click `setup.bat`. It installs what is missing with winget (git, ffmpeg, uv, Ollama, the Microsoft
+   Visual C++ runtime), downloads LilyPond into the app's own `tools` folder, gives the engine a Python of its
+   own with the PyTorch build for NVIDIA cards and, if you want music, installs Claude Code. Windows may warn
+   that the file came from the internet (choose More info, then Run anyway) and may ask for permission while
+   things install. `setup.bat -Check` only reports what is there.
+3. Double-click `Start Storyboard.bat`. From there everything is as described above: open **Models**, download
+   the kits, press **Finish setting up Fast video**.
+
+For an NVIDIA card older than the 20 series, ComfyUI asks for an older PyTorch build:
+`setup.bat -TorchIndex cu126 -PythonVersion 3.12`.
+
+What is checked on Windows, on GitHub's machines (the Actions tab shows the last run): `setup.bat` installs
+what such a machine is missing, which is ffmpeg, uv, Ollama, LilyPond, the engine with its Python parts, and
+Claude Code (git and the Visual C++ runtime are already on those machines). Then `windows/check.py` starts the
+app on throw-away data and tries what needs no graphics card: the pages, LilyPond, turning a score into an audio
+file in a hidden browser, joining clips with ffmpeg, a picture of your own as a character picture, keeping the PC
+awake, starting the engine (on the processor), downloading a model file from Hugging Face through the Models
+page, and stopping a download. Last, `Start Storyboard.bat` starts the app.
+
+What is not checked: drawing pictures, filming clips, finishing Fast video, songs, the sounds of the shots,
+writing a script, composing music (it needs your Claude sign-in), and how long anything takes.
 
 ## How long things take
 
@@ -137,6 +176,7 @@ run code, so do not expose it to a network.
 | `storyboard/models.py`, `storyboard/models.html` | The Models section: kits, the downloader, and which file each job uses. |
 | `storyboard/comfy_nodes/` | Two small ComfyUI nodes the app installs: one for GGUF prompt readers, one that turns generated audio into sound. |
 | `setup.command`, `Start Storyboard.command` | The installer and the launcher. |
+| `setup.bat`, `Start Storyboard.bat`, `windows/` | The same two for Windows (experimental), the scripts they run, and `windows/check.py`, which tries the app without a graphics card. |
 | `Start ComfyUI.command` | Opens the engine's own interface, if you are curious. The app never needs it. |
 | `ComfyUI/` | The engine, put there by setup. Never committed. |
 | `storyboard/data/` | Your projects, movies, music, settings and downloaded sounds. Never committed. |

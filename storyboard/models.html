@@ -320,6 +320,14 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const LABEL = {GGUF: 'GGUF', MLX: 'MLX', SAFETENSORS: 'Safetensors', OTHER: 'Other', KIT: 'Kit', OLLAMA: 'Ollama'};
 const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
 let filter = '', repo = null, fmt = '', picked = new Set(), freeBytes = 0, lastStates = '', jobStates = {}, mem = +(store.get('mem') || 0);
+// Wording that depends on the computer the app runs on (ST.system: "Darwin" on a Mac, "Windows", "Linux").
+const onWindows = () => !!ST && ST.system === 'Windows';
+const setupFile = () => onWindows() ? 'setup.bat' : 'setup.command';
+const fileManager = () => !ST || !ST.system || ST.system === 'Darwin' ? 'Finder' : onWindows() ? 'File Explorer' : 'your file manager';
+// How to log this computer in to Hugging Face. On Windows the helper is only inside the engine's own folder.
+const hfLogin = () => onWindows()
+  ? 'in PowerShell, from the app\'s folder: <span class="mono">ComfyUI\\.venv\\Scripts\\hf auth login</span>'
+  : 'in Terminal: <span class="mono">hf auth login</span>';
 let ST = null, slotLabels = {}, music, soundsBusy = 0;   // music: undefined = not asked yet, null = not reachable from here
 
 function say(text, mood) {
@@ -420,7 +428,7 @@ function kitCard(k) {
     } else if (w.models.length) {
       body += `<div class="knote">${w.models.length} writing model${w.models.length > 1 ? 's' : ''} on this computer: <span class="mono">${esc(names(w.models))}</span>. Any of them can write your scripts.</div>`;
     } else if (!w.installed) {
-      body += '<div class="knote">Ollama is not installed. Get it from <a href="https://ollama.com" target="_blank" rel="noopener">ollama.com</a>, or run setup.command in the app\'s folder, then come back here.</div>';
+      body += '<div class="knote">Ollama is not installed. Get it from <a href="https://ollama.com" target="_blank" rel="noopener">ollama.com</a>, or run ' + setupFile() + ' in the app\'s folder, then come back here.</div>';
     } else if (!w.running) {
       body += '<div class="knote">Ollama is installed but not running right now. Open the Movies page once and it starts by itself.</div>';
     } else {
@@ -669,7 +677,7 @@ function drawRepo(animate) {
     (r.warn ? `<div class="callout">${esc(r.warn)}</div>` : '') +
     (a.family === 'media' ? '<div class="callout">Downloading a model here does not teach the movie maker how to use it. The movie maker drives the models in the kits at the top. A file of the same family can be swapped in under “Which file each job uses”.</div>' : '') +
     (repo.gated === 'ok' ? `<div class="dim" style="margin-top:8px;font-size:13.5px">This model asks you to accept its terms. Your Hugging Face account already has access, so you are good to go.</div>` :
-     repo.gated === 'login' ? `<div class="callout">This model is locked. <a href="https://huggingface.co/${esc(repo.repo)}" target="_blank" rel="noopener">Accept its terms on Hugging Face</a>, then log this computer in to your Hugging Face account (in Terminal: <span class="mono">hf auth login</span>), or the download will be refused.</div>` :
+     repo.gated === 'login' ? `<div class="callout">This model is locked. <a href="https://huggingface.co/${esc(repo.repo)}" target="_blank" rel="noopener">Accept its terms on Hugging Face</a>, then log this computer in to your Hugging Face account (${hfLogin()}), or the download will be refused.</div>` :
      repo.gated ? `<div class="callout">This model is locked. <a href="https://huggingface.co/${esc(repo.repo)}" target="_blank" rel="noopener">Accept its terms on Hugging Face</a> first, or the download will be refused. Then press Find again.</div>` : '') +
     `<div style="margin-top:8px;font-size:13.5px"><a href="https://huggingface.co/${esc(repo.repo)}" target="_blank" rel="noopener">Read the maker's own page</a></div></div>`;
   if (mains.length) {
@@ -740,7 +748,7 @@ function drawJobs(jobs) {
       : `<span class="tag ${j.format}">${LABEL[j.format] || esc(j.format)}</span> <span class="mono">${esc(j.repo)}</span>`;
     return `<div class="job"><div class="job-top"><div>${head}</div>` +
       `<div style="display:flex;gap:8px">${live ? `<button class="small" data-cancel="${j.id}">Cancel</button>` : ''}` +
-      (j.kind === 'free' ? `<button class="small" data-open="${esc(j.dest)}">Show in Finder</button>` : '') +
+      (j.kind === 'free' ? `<button class="small" data-open="${esc(j.dest)}">Show in ${fileManager()}</button>` : '') +
       (live ? '' : `<button class="small" data-hide="${j.id}" title="Take this off the list. The files stay where they are.">Remove</button>`) + '</div></div>' +
       `<div class="progress"><i style="width:${pct}%;${j.state === 'done' ? 'background:var(--good)' : j.state === 'error' ? 'background:var(--bad)' : ''}"></i></div>` +
       `<div class="job-meta">${esc(meta)}</div>` + (j.error ? `<div class="err">${esc(plainError(j.error))}</div>` : '') +
@@ -772,7 +780,7 @@ async function loadLibrary() {
             `<button class="small" data-use="${i}:${k}">Use in the movie maker</button>`
           : `<span class="dim" style="font-size:12.5px">${w.parts ? 'comes in parts, so the movie maker cannot use it as it is' : 'not a file the movie maker uses'}</span>`) + '</div>').join('');
       return `<details class="libd" data-lib="${esc(m.path)}" ${openLib.has(m.path) ? 'open' : ''}><summary><span class="tag ${m.format}">${LABEL[m.format]}</span><span class="name mono">${esc(m.repo)}</span>` +
-        `<span class="dim" style="font-size:13px;white-space:nowrap">${size(m.size)}</span><button class="small" data-open="${esc(m.path)}">Show in Finder</button></summary>` +
+        `<span class="dim" style="font-size:13px;white-space:nowrap">${size(m.size)}</span><button class="small" data-open="${esc(m.path)}">Show in ${fileManager()}</button></summary>` +
         (rows || '<div class="wrow dim">No model files in here.</div>') + '</details>';
     }).join('');
   } catch (err) { $('library').innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; }

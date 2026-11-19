@@ -23,6 +23,7 @@ import atexit
 import fnmatch
 import http.client
 import json
+import ntpath
 import os
 import platform
 import plistlib
@@ -39,6 +40,41 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+WINDOWS = os.name == "nt"
+
+
+def find_new_programs():
+    """Windows only. A program is handed its PATH when it starts, so whatever was installed after its window was
+    opened (setup installs several things) cannot be found from it. Add the folders Windows lists now, and the ones
+    the installers use, behind what is already there: the same as opening a new window."""
+    if not WINDOWS:
+        return
+    import winreg
+    have = [p for p in os.environ.get("PATH", "").split(";") if p]
+    key = lambda p: ntpath.normcase(ntpath.expandvars(p)).rstrip("\\/")
+    known = {key(p) for p in have}
+    more = []
+    for hive, where in ((winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                        (winreg.HKEY_CURRENT_USER, "Environment")):
+        try:
+            with winreg.OpenKey(hive, where) as k:
+                more += str(winreg.QueryValueEx(k, "Path")[0]).split(";")
+        except OSError:
+            pass
+    for var, folder in (("USERPROFILE", r".local\bin"), ("LOCALAPPDATA", r"Microsoft\WinGet\Links"),
+                        ("LOCALAPPDATA", r"Programs\Ollama")):
+        if os.environ.get(var):
+            more.append(ntpath.join(os.environ[var], folder))
+    for p in more:
+        p = ntpath.expandvars(p.strip().strip('"'))
+        if p and key(p) not in known:
+            known.add(key(p))
+            have.append(p)
+    os.environ["PATH"] = ";".join(have)
+
+
+find_new_programs()  # before anything below (or in the modules loaded after this one) looks for ffmpeg and the rest
+
 import percussion  # the recorded drums and percussion: a kit that fetches and cuts its own recordings
 
 HERE = Path(__file__).resolve().parent
@@ -49,11 +85,54 @@ COMFY_MODELS = COMFY_DIR / "models"
 STAGING = COMFY_MODELS / ".downloads"      # kit files land here first, then move to their folder
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 SYSTEM = platform.system()                 # "Darwin", "Linux" or "Windows"
+SETUP_FILE = "setup.bat" if WINDOWS else "setup.command"   # the file the messages tell people to double-click
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 # app.py fills these in: hooks["bake"]() queues the job that finishes Fast video; hooks["log"] writes to its log.
 # Optional extra: hooks["baking"] = a function returning True while that job is waiting or running.
 hooks = {"bake": None, "log": print}
+
+
+
+def engine_python():
+    """The Python that setup made for the engine (ComfyUI's own environment)."""
+    venv = COMFY_DIR / ".venv"
+    return venv / "Scripts" / "python.exe" if WINDOWS else venv / "bin" / "python"
+
+
+def stop_process(proc, patience=3.0):
+    """Stop a program this app started, together with whatever it started itself.
+    On Windows the engine's python.exe and the hf command are small starters that run the real program as a child,
+    so the whole family is stopped by name of its parent (taskkill /T). Elsewhere the program is asked to stop.
+    Waits up to `patience` seconds for it to be gone and then insists; None does not wait at all."""
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        if WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=20)
+        else:
+            proc.terminate()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if patience is None:
+        return
+    try:
+        proc.wait(timeout=patience)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def awake_command():
+    """A command that keeps this computer from going to sleep for as long as it runs, or None when there is no way.
+    On a Mac that is caffeinate. Windows has no such program, so a small Python of our own asks Windows to stay
+    awake (the computer may not sleep, the screen may) and then just waits: the request ends with the process."""
+    if WINDOWS:
+        return [sys.executable, "-c", "import ctypes, time; ctypes.windll.kernel32.SetThreadExecutionState("
+                                      "ctypes.c_uint(0x80000001)); time.sleep(3000000)"]
+    if shutil.which("caffeinate"):
+        return ["caffeinate", "-i", "-m", "-s"]
+    return None
+
 
 FORMATS = ("GGUF", "MLX", "SAFETENSORS", "OTHER")
 FOLDER = "MODELS"
@@ -217,7 +296,7 @@ def _kit_job(kit_id, snap):
 
 
 def _engine_ready():
-    return (COMFY_DIR / "main.py").is_file() and (COMFY_DIR / ".venv" / "bin" / "python").exists()
+    return (COMFY_DIR / "main.py").is_file() and engine_python().exists()
 
 
 def _sounds_have():
@@ -279,7 +358,7 @@ def kit_view(kit, snap):
     kind = kit["kind"]
     if kind == "engine":
         v["detail"] = ("Installed." if v["state"] == "ready"
-                       else "Not installed yet. Double-click setup.command in the app's folder.")
+                       else f"Not installed yet. Double-click {SETUP_FILE} in the app's folder.")
     elif kind == "sounds":
         v.update(have=_sounds_have(), wanted=kit["wanted"])
     elif kind == "percussion":
@@ -325,9 +404,16 @@ def summary():
 _writer = {"at": 0.0, "value": {"running": False, "installed": False, "models": []}, "busy": False}
 
 
+def ollama_places():
+    """Where Ollama's program is when it is installed but not on the PATH this app was started with."""
+    if WINDOWS:
+        return [Path(os.environ[k]) / "Programs" / "Ollama" / "ollama.exe" for k in ("LOCALAPPDATA",) if os.environ.get(k)]
+    return ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama", "/Applications/Ollama.app/Contents/Resources/ollama"]
+
+
 def _ollama_installed():
     return bool(shutil.which("ollama")) or any(Path(p).exists() for p in (
-        "/usr/local/bin/ollama", "/opt/homebrew/bin/ollama", "/Applications/Ollama.app"))
+        *ollama_places(), "/Applications/Ollama.app"))
 
 
 def _ollama_check(timeout=1.5):
@@ -516,6 +602,23 @@ def reset_slots():
     return {"ok": True}
 
 
+def _link(real, target):
+    """Make `target` stand for the file `real` without copying it."""
+    try:
+        os.symlink(real, target)
+    except OSError:
+        if not WINDOWS:
+            raise
+        # Windows only lets an ordinary account make that kind of link in Developer Mode. A hard link needs no
+        # permission and costs no space either, but both files have to be on the same drive.
+        try:
+            os.link(real, target)
+        except OSError:
+            raise ValueError("Windows did not allow a link to that file. Turn on Developer Mode (Settings, System, "
+                             "For developers) and try again, or move the file into this folder yourself: "
+                             + str(target.parent))
+
+
 def use_as(path, slot_name):
     """Put a downloaded file where the engine can see it (a link, not a copy) and choose it for a slot."""
     s = _slot_def(slot_name)
@@ -535,7 +638,7 @@ def use_as(path, slot_name):
     if SPLIT_RE.search(p.name):
         raise ValueError("That model comes in several parts. The movie maker needs a single file.")
     if not COMFY_MODELS.is_dir():
-        raise ValueError("The engine is not installed yet. Run setup.command in the app's folder first.")
+        raise ValueError(f"The engine is not installed yet. Run {SETUP_FILE} in the app's folder first.")
     folder = COMFY_MODELS / s["folder"]
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / p.name
@@ -546,7 +649,7 @@ def use_as(path, slot_name):
             raise ValueError(f"The engine already has a different file called {p.name} in its {s['folder']} folder. "
                              "Rename yours, or move that one away first.")
     if not target.exists():
-        os.symlink(real, target)
+        _link(real, target)
     with _lock:
         adopted = settings().setdefault("adopted", {}).setdefault(slot_name, [])
         if p.name not in adopted:
@@ -600,7 +703,8 @@ def ensure_root():
 def set_root(path):
     p = Path(str(path or "")).expanduser()
     if not p.is_absolute():
-        raise ValueError("Give the full path to a folder, for example /Users/you/MODELS.")
+        raise ValueError("Give the full path to a folder, for example "
+                         + (r"D:\MODELS" if WINDOWS else "/Users/you/MODELS") + ".")
     if not p.parent.is_dir():
         raise ValueError(f"{p.parent} does not exist.")
     try:
@@ -773,7 +877,7 @@ def hf_api():
         try:
             from huggingface_hub import HfApi
         except ImportError:
-            raise ValueError("The download helper is missing. Run setup.command in the app's folder, then try again.")
+            raise ValueError(f"The download helper is missing. Run {SETUP_FILE} in the app's folder, then try again.")
         _hf = HfApi()
     return _hf
 
@@ -1244,27 +1348,36 @@ def _hf_download(job, files):
     """Run `hf download` for a job. Returns (exit code, the last lines it printed)."""
     hf = hf_bin()
     if not hf:
-        raise RuntimeError("The download helper (hf) is not installed. Run setup.command in the app's folder.")
+        raise RuntimeError(f"The download helper (hf) is not installed. Run {SETUP_FILE} in the app's folder.")
     dest = Path(job["dest"])
     dest.mkdir(parents=True, exist_ok=True)
     cmd = [hf, "download", job["repo"], *files, "--local-dir", str(dest)]
-    if shutil.which("caffeinate"):  # macOS: keep the computer awake while downloading
+    awake = None
+    if WINDOWS:  # Windows: our own small helper keeps the PC awake while this download runs
+        try:
+            awake = subprocess.Popen(awake_command())
+        except OSError:
+            pass
+    elif shutil.which("caffeinate"):  # macOS: keep the computer awake while downloading
         cmd = ["caffeinate", "-i", *cmd]
     env = os.environ | cache_env(Path(job["root"]))
     if max(job["files"].values()) > XET_ONLY_OVER:
         del env["HF_HUB_DISABLE_XET"]  # Hugging Face only serves files this big through xet
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
-                            start_new_session=os.name == "posix")
-    job["proc"] = proc
-    tail = b""
-    while True:
-        chunk = proc.stdout.read1(65536)
-        if not chunk:
-            break
-        tail = (tail + chunk)[-6000:]
-    code = proc.wait()
-    job["proc"] = None
-    return code, tail
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                                start_new_session=os.name == "posix")
+        job["proc"] = proc
+        tail = b""
+        while True:
+            chunk = proc.stdout.read1(65536)
+            if not chunk:
+                break
+            tail = (tail + chunk)[-6000:]
+        code = proc.wait()
+        job["proc"] = None
+        return code, tail
+    finally:
+        stop_process(awake, None)
 
 
 def _plain_tail(tail, code):
@@ -1436,7 +1549,7 @@ def start_kit(kit_id):
     if kit is None or kit["kind"] not in ("files", "fast"):
         raise ValueError("That is not a kit I can download.")
     if not COMFY_DIR.is_dir():
-        raise ValueError("The engine is not installed yet. Run setup.command in the app's folder first.")
+        raise ValueError(f"The engine is not installed yet. Run {SETUP_FILE} in the app's folder first.")
     if kit["kind"] == "fast":
         m = kit["merged"]
         if _have(m["folder"], m["name"], m["bytes"]):
@@ -1490,12 +1603,12 @@ def cancel_job(job_id):
         except Exception:
             pass
     if proc and proc.poll() is None:
+        if os.name != "posix":   # Windows: hf.exe is a starter, the download itself is its child
+            stop_process(proc)
+            return
         for sig in (signal.SIGTERM, signal.SIGKILL):
             try:
-                if os.name == "posix":
-                    os.killpg(proc.pid, sig)
-                else:
-                    proc.kill()
+                os.killpg(proc.pid, sig)
             except (ProcessLookupError, OSError):
                 break
             try:

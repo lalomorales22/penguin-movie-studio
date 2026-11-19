@@ -1,0 +1,4 @@
+# Line ends each kind of script needs, on whatever computer the files are checked out or unzipped.
+# The Windows batch files are stored with their CRLF line ends and never converted; the Mac scripts stay LF.
+*.bat     -text
+*.command text eol=lf
