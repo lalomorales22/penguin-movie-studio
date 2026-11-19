@@ -23,6 +23,7 @@ import atexit
 import fnmatch
 import http.client
 import json
+import ntpath
 import os
 import platform
 import plistlib
@@ -39,6 +40,41 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+WINDOWS = os.name == "nt"
+
+
+def find_new_programs():
+    """Windows only. A program is handed its PATH when it starts, so whatever was installed after its window was
+    opened (setup installs several things) cannot be found from it. Add the folders Windows lists now, and the ones
+    the installers use, behind what is already there: the same as opening a new window."""
+    if not WINDOWS:
+        return
+    import winreg
+    have = [p for p in os.environ.get("PATH", "").split(";") if p]
+    key = lambda p: ntpath.normcase(ntpath.expandvars(p)).rstrip("\\/")
+    known = {key(p) for p in have}
+    more = []
+    for hive, where in ((winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                        (winreg.HKEY_CURRENT_USER, "Environment")):
+        try:
+            with winreg.OpenKey(hive, where) as k:
+                more += str(winreg.QueryValueEx(k, "Path")[0]).split(";")
+        except OSError:
+            pass
+    for var, folder in (("USERPROFILE", r".local\bin"), ("LOCALAPPDATA", r"Microsoft\WinGet\Links"),
+                        ("LOCALAPPDATA", r"Programs\Ollama")):
+        if os.environ.get(var):
+            more.append(ntpath.join(os.environ[var], folder))
+    for p in more:
+        p = ntpath.expandvars(p.strip().strip('"'))
+        if p and key(p) not in known:
+            known.add(key(p))
+            have.append(p)
+    os.environ["PATH"] = ";".join(have)
+
+
+find_new_programs()  # before anything below (or in the modules loaded after this one) looks for ffmpeg and the rest
+
 import percussion  # the recorded drums and percussion: a kit that fetches and cuts its own recordings
 
 HERE = Path(__file__).resolve().parent
@@ -49,7 +85,6 @@ COMFY_MODELS = COMFY_DIR / "models"
 STAGING = COMFY_MODELS / ".downloads"      # kit files land here first, then move to their folder
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 SYSTEM = platform.system()                 # "Darwin", "Linux" or "Windows"
-WINDOWS = os.name == "nt"
 SETUP_FILE = "setup.bat" if WINDOWS else "setup.command"   # the file the messages tell people to double-click
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 

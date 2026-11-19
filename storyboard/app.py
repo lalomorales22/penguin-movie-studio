@@ -48,6 +48,8 @@ for _ext, _type in ((".js", "text/javascript"), (".mjs", "text/javascript"), (".
                     (".flac", "audio/x-flac")):
     mimetypes.add_type(_type, _ext)
 
+# (models comes first: on Windows, loading it also puts freshly installed programs on the PATH, and the lines after
+# it look for ffmpeg and the other helpers there)
 import models  # the Models section (models.py and models.html): kits, downloads, which file each job uses
 import music  # the Music section (music.py and the music/ folder)
 

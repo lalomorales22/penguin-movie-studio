@@ -86,6 +86,7 @@ jobs:
             exit 1
           }
           "Start Storyboard.bat started the app, and it answered."
+          exit 0
 
       - name: Keep what the app wrote, if something failed
         if: failure()

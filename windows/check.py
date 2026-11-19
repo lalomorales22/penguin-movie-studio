@@ -68,12 +68,30 @@ def say(ok, what, detail=""):
 def check(what):
     """Run one check: the function returns a short detail to print, or raises with the reason it failed."""
     def wrap(fn):
+        began = time.time()
+        took = lambda: f"   [{time.time() - began:.0f} s]"
         try:
-            say(True, what, fn() or "")
+            detail = fn() or ""
+            say(True, what, detail + took())
         except Exception as e:
-            say(False, what, f"{type(e).__name__}: {e}"[:600])
+            say(False, what, f"{type(e).__name__}: {e}"[:900] + took())
         return fn
     return wrap
+
+
+def stop(proc):
+    """Stop a program together with whatever it started. Windows stops a program without letting it tidy up, so
+    the engine the app started would stay behind; there the whole family is stopped by name of its parent."""
+    if proc is None or proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    else:
+        proc.terminate()
+    try:
+        proc.wait(20)
+    except subprocess.TimeoutExpired:
+        proc.kill()
 
 
 class Web:
@@ -139,6 +157,11 @@ def prepare(data):
 def main():
     print(f"Checking Penguin's Storyboard on {platform.system()} {platform.release()} with Python {platform.python_version()}")
     data = Path(tempfile.mkdtemp(prefix="storyboard-check-"))
+    # The app's own models.py, loaded here for two things: on Windows, loading it puts the programs that setup
+    # installed a moment ago on the PATH (this window may be older than they are), and one check asks it questions.
+    os.environ["STORYBOARD_DATA"] = str(data)   # it reads its settings from here, so it must be set first
+    sys.path.insert(0, str(APP))
+    import models
     port = free_port()
     env = dict(os.environ, STORYBOARD_DATA=str(data), STORYBOARD_PORT=str(port), STORYBOARD_NO_BROWSER="1",
                MUSIC_NO_FETCH="1", PYTHONUTF8="1")
@@ -211,6 +234,9 @@ def main():
             assert lines, "the dynamics were not written down (perform.ily did not load?): " + str(r.get("log"))[:300]
             return f"{len(r['svgs'])} page, dynamics from {lines[0][0][1]} to {lines[0][-1][1]}"
 
+        temp = Path(tempfile.gettempdir())
+        browser_folders = set(temp.glob("storyboard-chrome-*"))   # (left by something else, not counted below)
+
         @check("a hidden browser turns the score into an audio file")
         def _():
             piece = web.post("/music/api/pieces", {"data": {"name": "Check", "ly": SCORE, "sound": "grand"}})
@@ -220,6 +246,12 @@ def main():
             wav.write_bytes(body)
             length = seconds(wav)
             assert 4.0 < length < 12.0, f"the audio is {length:.1f} seconds long (about 7.5 expected)"
+            # the browser worked in a folder of its own, which the app deletes (Windows may need a moment for that)
+            deadline = time.time() + 20
+            while time.time() < deadline and set(temp.glob("storyboard-chrome-*")) - browser_folders:
+                time.sleep(0.5)
+            left = set(temp.glob("storyboard-chrome-*")) - browser_folders
+            assert not left, f"the hidden browser's folder was left behind: {sorted(left)[0]}"
             return f"{len(body) // 1000} kB, {length:.1f} seconds"
 
         @check("ffmpeg joins two clips into a movie through the app's queue")
@@ -259,9 +291,6 @@ def main():
 
         @check("the keep-awake helper runs")
         def _():
-            os.environ["STORYBOARD_DATA"] = str(data)
-            sys.path.insert(0, str(APP))
-            import models
             assert models.engine_python().exists(), "the engine's Python is not at " + str(models.engine_python())
             cmd = models.awake_command()
             assert cmd, "there is nothing to keep this computer awake with"
@@ -293,12 +322,7 @@ def main():
                 tail = log.read_text(encoding="utf-8", errors="replace")[-1500:] if log.exists() else "(no engine log)"
                 raise RuntimeError("the engine did not come up within 10 minutes. Its log ends:\n" + tail)
     finally:
-        if app is not None and app.poll() is None:
-            app.terminate()
-            try:
-                app.wait(20)
-            except subprocess.TimeoutExpired:
-                app.kill()
+        stop(app)
         if out:
             out.close()
         bad = [what for ok, what in RESULTS if not ok]

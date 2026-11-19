@@ -993,6 +993,21 @@ _render_one = threading.Lock()  # one hidden browser at a time
 MAX_SECONDS = 20 * 60
 
 
+def _remove_folder(path):
+    """Delete a temporary folder. On Windows a program that was just stopped keeps its files a moment longer, so
+    there this keeps trying for a few seconds in the background instead of leaving the folder behind."""
+    def go():
+        for _ in range(30):
+            shutil.rmtree(path, ignore_errors=True)
+            if not os.path.exists(path):
+                return
+            time.sleep(0.5)
+    if WINDOWS:
+        threading.Thread(target=go, daemon=True).start()
+    else:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def render_audio(spec, wav, timeout=900):
     """Play `spec` (see piece_spec) into the WAV file `wav` with the studio's sound engine. Returns facts about it."""
     exe = browser()
@@ -1022,7 +1037,7 @@ def render_audio(spec, wav, timeout=900):
                     proc.kill()
     finally:
         RENDERS.pop(token, None)
-        shutil.rmtree(profile, ignore_errors=True)
+        _remove_folder(profile)
     if job["error"]:
         raise RuntimeError(job["error"])
     if not Path(wav).exists() or Path(wav).stat().st_size < 1000:
