@@ -102,10 +102,10 @@ Mac. The models were chosen for 24 GB of memory. A card with 24 GB should hold t
 keeps part of each model in normal memory, which is slower (32 GB of normal memory is safer then). None of that
 has been measured. Cards from AMD and Intel are not set up.
 
-1. Get the folder. For now the Windows version is on its own branch, `windows-support`: download
-   [the ZIP of that branch](https://github.com/lalomorales22/penguin-movie-studio/archive/refs/heads/windows-support.zip)
-   and unpack it, or run `git clone -b windows-support https://github.com/lalomorales22/penguin-movie-studio.git`.
-   A short path without accents, such as `C:\penguin-movie-studio`, avoids trouble.
+1. Get the folder: download
+   [the ZIP](https://github.com/lalomorales22/penguin-movie-studio/archive/refs/heads/main.zip) and unpack it,
+   or run `git clone https://github.com/lalomorales22/penguin-movie-studio.git`. A short path without accents,
+   such as `C:\penguin-movie-studio`, avoids trouble.
 2. Double-click `setup.bat`. It installs what is missing with winget (git, ffmpeg, uv, Ollama, the Microsoft
    Visual C++ runtime), downloads LilyPond into the app's own `tools` folder, gives the engine a Python of its
    own with the PyTorch build for NVIDIA cards and, if you want music, installs Claude Code. Windows may warn

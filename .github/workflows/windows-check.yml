@@ -5,9 +5,10 @@ name: Windows check
 # needs none: the pages, LilyPond, turning a score into an audio file, joining clips, starting the engine,
 # downloading a model file from Hugging Face and stopping a download.
 # It cannot show that pictures and videos get made.
+# It runs after every change to main, and to windows-support, the branch the Windows version was first built on.
 on:
   push:
-    branches: [windows-support]
+    branches: [main, windows-support]
   workflow_dispatch:
 
 permissions:
