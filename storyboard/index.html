@@ -227,6 +227,11 @@ function h(tag, attrs = {}, ...kids) {
   return e;
 }
 let ST = null, view = { page: 'home', pid: null, sig: '' }, homeSig = '', queueSig = '';
+// Wording that depends on the computer the app runs on (ST.system: "Darwin" on a Mac, "Windows", "Linux").
+const onMac = () => !ST || !ST.system || ST.system === 'Darwin';
+const thisComputer = () => onMac() ? 'this Mac' : ST.system === 'Windows' ? 'this PC' : 'this computer';
+const setupFile = () => ST && ST.system === 'Windows' ? 'setup.bat' : 'setup.command';
+const fileManager = () => onMac() ? 'Finder' : ST.system === 'Windows' ? 'File Explorer' : 'your file manager';
 const AR = { wide: '832 / 480', tall: '480 / 832', square: '1 / 1' };
 const startLabels = u => ({ picture: `This ${u}'s picture`, previous: `The end of the ${u} before`, text: 'Nothing, just the words' });
 const LENGTHS = [[15, '15 seconds'], [30, '30 seconds'], [45, '45 seconds'], [60, '1 minute'], [90, '1½ minutes'], [120, '2 minutes'], [180, '3 minutes']];
@@ -290,7 +295,7 @@ function renderTop() {
   if (s.mode === 'paused') t = n ? `Paused. ${plural(n, 'job')} waiting. Nothing runs until you choose Go now or Night mode.` : 'Paused. Nothing will run.';
   else if (!n) t = writing ? 'Writing a script…' : s.mode === 'night' ? `Night mode is on, ${fmtHM(s.night_start)} to ${fmtHM(s.night_end)}. Nothing is in the queue yet.` : 'Nothing in the queue. Tell me an idea and press Begin.';
   else if (s.mode === 'night' && !ST.night.active) {
-    t = `Night mode: I start at ${fmtHM(s.night_start)} (in ${fmtDur(ST.night.starts_in)}) and keep this Mac awake. ${plural(n, 'job')}, ${about(ST.seconds_left)} of work, done around ${fmtClock(ST.finish_at)}.`;
+    t = `Night mode: I start at ${fmtHM(s.night_start)} (in ${fmtDur(ST.night.starts_in)}) and keep ${thisComputer()} awake. ${plural(n, 'job')}, ${about(ST.seconds_left)} of work, done around ${fmtClock(ST.finish_at)}.`;
   } else if (run) {
     t = `Working on ${run.label}. ${run.phase}, ${about(run.remaining)} left.` + (waiting.length ? ` ${waiting.length} more waiting, all done around ${fmtClock(ST.finish_at)}.` : '');
   } else t = ST.comfy === 'up' ? 'Starting the next job…' : 'Waking up the engine, then starting…';
@@ -301,7 +306,7 @@ function renderTop() {
     if (ST.finish_at > end.getTime() / 1000) t += ` That is more than one night: I stop at ${fmtHM(s.night_end)} and carry on the next evening.`;
   }
   $('#say').textContent = t;
-  const aw = $('#awake'); aw.style.display = ST.awake ? '' : 'none'; aw.textContent = 'Keeping this Mac awake'; aw.className = 'pill moon';
+  const aw = $('#awake'); aw.style.display = ST.awake ? '' : 'none'; aw.textContent = `Keeping ${thisComputer()} awake`; aw.className = 'pill moon';
   const en = $('#engine'); en.className = 'pill' + (ST.comfy === 'up' ? ' ok' : '');
   en.textContent = ST.comfy === 'up' ? 'Engine ready' : ST.comfy === 'starting' ? 'Engine starting…' : 'Engine asleep (starts when needed)';
 }
@@ -355,7 +360,7 @@ function ideaSummary() {
   const pic = ST.refs ? (est.image_refs || [])[1] || est.image : est.image, extra = ST.refs ? 2 * (est.ref || est.image) : 0;
   const each = pic + (ST.turbo ? est.video_fast : est.video)[String(draft.shot)];
   const tune = draft.music ? 180 : 0;
-  return `That is ${plural(n, 'shot')} of ${draft.shot} seconds: ${ST.refs ? 'a picture of each character, then ' : ''}${plural(n, 'picture')} and ${plural(n, 'video')}, then ${draft.music ? 'the music and ' : ''}one finished movie. About ${fmtDur(n * each + extra + tune + 60)} to make on this Mac.`;
+  return `That is ${plural(n, 'shot')} of ${draft.shot} seconds: ${ST.refs ? 'a picture of each character, then ' : ''}${plural(n, 'picture')} and ${plural(n, 'video')}, then ${draft.music ? 'the music and ' : ''}one finished movie. About ${fmtDur(n * each + extra + tune + 60)} to make on ${thisComputer()}.`;
 }
 function renderHome() {
   const sig = 'home|' + ST.ollama + '|' + ST.music.ready + '|' + Object.values(ST.kits || {}).join(',') + '|' + (ST.text_models || []).map(m => m.name).join(',') + '|' + ST.projects.map(p => [p.id, p.name, p.kind, p.writing, p.shots.length, p.shots.filter(s => s.image).length, p.shots.filter(s => s.video).length, (p.shots.find(s => s.image) || {}).image].join(':')).join('|');
@@ -407,7 +412,7 @@ function renderHome() {
         h('button', { disabled: noWriter, onclick: () => start(false) }, 'Just write the script first'),
         h('span', { class: 'dim', style: 'font-size:13.5px' }, 'Script written by'), modelSelect('imodel', draft.model, e => { draft.model = e.target.value; })),
       noWriter && h('div', { class: 'dim', style: 'margin-top:8px;font-size:13.5px' },
-        ST.ollama === 'missing' ? 'The script writer needs Ollama. Double-click setup.command in the app’s folder to install it. Without it you can still make an empty project and write the shots yourself.'
+        ST.ollama === 'missing' ? `The script writer needs Ollama. Double-click ${setupFile()} in the app’s folder to install it. Without it you can still make an empty project and write the shots yourself.`
         : ST.ollama === 'up' ? ['There is no writing model on this computer yet. ', h('a', { href: '/models' }, 'Open Models'), ' and download the Script writer. Without it you can still make an empty project and write the shots yourself.']
         : 'Looking for Ollama’s writing models…')),
     h('h3', { class: 'sec' }, 'Your projects'),
@@ -544,7 +549,7 @@ function buildProject(p, unit) {
         pics && h('button', { class: 'small', id: 'remake', style: 'display:none', title: 'Make the shots that have a character in them again, drawn from the character pictures. What you have now is kept as an earlier version.', onclick: () => remake(p.id) }, 'Remake the shots from the character pictures')),
       h('input', { type: 'file', id: 'castfile', accept: 'image/*,.heic', style: 'display:none', onchange: e => uploadCastPicture(p.id, e.target) })),
     h('div', { class: 'actions', style: 'margin-top:12px' },
-      h('button', { class: 'small', onclick: async () => { toast('Joining the videos…'); const r = await act(`/api/export/${p.id}/movie`); if (r) toast('Movie saved. Showing it in Finder.'); } }, 'Join the videos made so far'),
+      h('button', { class: 'small', onclick: async () => { toast('Joining the videos…'); const r = await act(`/api/export/${p.id}/movie`); if (r) toast(`Movie saved. Showing it in ${fileManager()}.`); } }, 'Join the videos made so far'),
       h('button', { class: 'small', onclick: async () => { const r = await act(`/api/export/${p.id}/book`); if (r) toast('Storybook saved. Open index.html, then File → Print to make a PDF.'); } }, 'Make a storybook'),
       h('button', { class: 'small ghost', onclick: () => act(`/api/project/${p.id}/reveal`) }, 'Open folder'),
       h('button', { class: 'small ghost danger', style: 'margin-left:auto', onclick: async () => { if (confirm(`Delete “${p.name}”? It is moved to the Storyboard trash folder, not erased.`)) { await act(`/api/project/${p.id}/delete`); go('home'); } } }, 'Delete project')),

@@ -31,6 +31,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+if os.name == "nt" and not sys.flags.utf8_mode and __name__ == "__main__":
+    # Windows reads and writes text files in an old code page unless Python is told otherwise, and every file of
+    # this app is UTF-8. The launcher sets this; started by hand, the app starts itself once more with it set.
+    os.environ["PYTHONUTF8"] = "1"
+    try:
+        raise SystemExit(subprocess.call([sys.executable, *sys.argv]))
+    except KeyboardInterrupt:
+        raise SystemExit(0)
+
+# What each kind of file is, said outright. Windows otherwise looks this up in its registry, where another program
+# may have filed .js under plain text, and a browser refuses to run a script module that is served like that.
+for _ext, _type in ((".js", "text/javascript"), (".mjs", "text/javascript"), (".css", "text/css"), (".html", "text/html"),
+                    (".json", "application/json"), (".svg", "image/svg+xml"), (".png", "image/png"), (".jpg", "image/jpeg"),
+                    (".mp4", "video/mp4"), (".m4a", "audio/mp4a-latm"), (".mp3", "audio/mpeg"), (".wav", "audio/x-wav"),
+                    (".flac", "audio/x-flac")):
+    mimetypes.add_type(_type, _ext)
+
 import models  # the Models section (models.py and models.html): kits, downloads, which file each job uses
 import music  # the Music section (music.py and the music/ folder)
 
@@ -170,7 +187,15 @@ def new_id(prefix):
 def atomic_write(path, obj):
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(obj, indent=1, ensure_ascii=False))
-    os.replace(tmp, path)
+    for attempt in range(40):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            # Windows: a virus scanner or the search index may be holding the old file open for a moment.
+            if not models.WINDOWS or attempt == 39:
+                raise
+            time.sleep(0.05)
 
 
 def save_state():
@@ -576,7 +601,7 @@ def ensure_comfy():
         if comfy_up():
             RUNTIME["comfy"] = "up"
             return
-        py = COMFY_DIR / ".venv" / "bin" / "python"
+        py = models.engine_python()
         if not py.exists():
             RUNTIME["comfy"] = "down"
             raise ComfyDown(f"ComfyUI was not found at {COMFY_DIR}")
@@ -871,10 +896,9 @@ def ollama_up():
 
 
 def ollama_bin():
-    for cand in (shutil.which("ollama"), "/usr/local/bin/ollama", "/opt/homebrew/bin/ollama",
-                 "/Applications/Ollama.app/Contents/Resources/ollama"):
+    for cand in (shutil.which("ollama"), *models.ollama_places()):
         if cand and Path(cand).exists():
-            return cand
+            return str(cand)
     return None
 
 
@@ -1691,10 +1715,7 @@ def run_music_job(job):
     try:
         if not piece_id:
             t = music.tools()
-            why = ("LilyPond is not installed (run setup.command)." if not t["lilypond"]
-                   else "Claude Code is not installed, so nothing can compose (run setup.command)." if not t["claude"]
-                   else "Claude Code is not signed in. Open Terminal, run claude once and sign in." if t["claudeSignedIn"] is False
-                   else "")
+            why = music.missing_for_composing(t)
             if why:
                 raise JobFailed(why)
             plan = music.cue_plan(secs, style)
@@ -2131,7 +2152,8 @@ def worker():
 
 
 def keep_awake():
-    """Hold the Mac awake (caffeinate) while there is work queued and the queue is not paused."""
+    """Hold the computer awake (caffeinate on a Mac, models.awake_command() says what elsewhere) while there is
+    work queued and the queue is not paused."""
     while True:
         time.sleep(4)
         try:
@@ -2140,8 +2162,10 @@ def keep_awake():
                 want = work and S["settings"]["mode"] != "paused"
             proc = RUNTIME.get("awake_proc")
             alive = proc is not None and proc.poll() is None
-            if want and not alive and shutil.which("caffeinate"):
-                RUNTIME["awake_proc"] = subprocess.Popen(["caffeinate", "-i", "-m", "-s"])
+            if want and not alive:
+                awake = models.awake_command()
+                if awake:
+                    RUNTIME["awake_proc"] = subprocess.Popen(awake)
             elif not want and alive:
                 proc.terminate()
                 RUNTIME["awake_proc"] = None
@@ -2215,7 +2239,7 @@ def state_view():
             start_at = now
         proc = RUNTIME.get("awake_proc")
         return {
-            "now": now, "settings": st, "jobs": jobs, "seconds_left": round(left),
+            "now": now, "system": models.SYSTEM, "settings": st, "jobs": jobs, "seconds_left": round(left),
             "finish_at": start_at + left if left else None, "night": night,
             "running": allowed_to_run(), "comfy": RUNTIME["comfy"],
             "awake": proc is not None and proc.poll() is None,
@@ -2246,6 +2270,23 @@ def state_view():
 
 
 # ---------------------------------------------------------------- exports
+
+def show_in_folder(path, select=False):
+    """Open a folder in Finder (File Explorer on Windows); with select, open the folder a file is in and mark the file."""
+    path = Path(path)
+    try:
+        if models.WINDOWS:
+            if select:
+                subprocess.Popen(f'explorer /select,"{path}"')
+            else:
+                os.startfile(str(path))  # noqa: only exists on Windows
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(path)] if select else ["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path.parent if select else path)])
+    except OSError as e:
+        log("could not show", path, "in the file manager:", e)
+
 
 def safe_name(name):
     return re.sub(r"[^A-Za-z0-9 _-]+", "", name).strip().replace(" ", "_")[:60] or "project"
@@ -2281,7 +2322,8 @@ def export_movie(pid):
     audio = audio if audio and audio.exists() else None
     picture = out.with_name(out.stem + "_picture.mp4") if audio or any(sfx) else out
     listing = out_dir / "_join.txt"
-    listing.write_text("".join("file '" + str(c).replace("'", "'\\''") + "'\n" for c in clips))
+    # (forward slashes in the names: ffmpeg takes those on every system, and a backslash means something in this list)
+    listing.write_text("".join("file '" + c.as_posix().replace("'", "'\\''") + "'\n" for c in clips))
     r = subprocess.run([FFMPEG, "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-an", "-c:v", "libx264",
                         "-pix_fmt", "yuv420p", "-r", str(FPS), "-crf", "17", "-movflags", "+faststart", str(picture)],
                        capture_output=True, text=True)
@@ -2423,7 +2465,7 @@ class Handler(BaseHTTPRequestHandler):
                         break
                     self.wfile.write(chunk)
                     left -= len(chunk)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:  # the browser went away (broken pipe, reset; on Windows: aborted)
             pass
 
     def do_GET(self):
@@ -2716,7 +2758,7 @@ class Handler(BaseHTTPRequestHandler):
                     queue_music(pid, compose=False)
                     return {"ok": True}
                 if rest == ["reveal"]:
-                    subprocess.Popen(["open", str(PROJECTS / pid)])
+                    show_in_folder(PROJECTS / pid)
                     return {"ok": True}
                 if rest and rest[0] == "shot" and len(rest) >= 2:
                     i, s = find_shot(p, rest[1])
@@ -2813,22 +2855,46 @@ class Handler(BaseHTTPRequestHandler):
         # slower things run outside the lock
         if what == "export" and len(parts) == 4 and parts[2] in P:
             out = export_movie(parts[2]) if parts[3] == "movie" else export_book(parts[2])
-            subprocess.Popen(["open", "-R", str(out)])
+            show_in_folder(out, select=True)
             return {"file": out.name}
         raise ValueError("Unknown request")
 
 
+def calm_console():
+    """Windows only. In the classic console window a click selects text, and while anything is selected whatever
+    the program prints has to wait, and the whole app with it. Switch that mode off for this window."""
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        k32.GetStdHandle.restype = ctypes.c_void_p
+        window = ctypes.c_void_p(k32.GetStdHandle(-10))  # what this window types into the program
+        mode = ctypes.c_uint()
+        if k32.GetConsoleMode(window, ctypes.byref(mode)):
+            k32.SetConsoleMode(window, (mode.value & ~0x0040) | 0x0080)  # quick-edit off, and say the flag is meant
+    except Exception:
+        pass
+
+
+class Server(ThreadingHTTPServer):
+    # Opened the usual way, a port on Windows can be shared by a second program. There a second copy of the app
+    # has to fail to get the port instead, so that it opens the copy that is already running (see main).
+    allow_reuse_address = not models.WINDOWS
+
+
 def main():
+    if models.WINDOWS:
+        calm_console()
     load_all()
     models.hooks["bake"] = start_bake
     models.hooks["baking"] = lambda: RUNTIME["bake"]["state"] in ("waiting", "running")
     for target in (worker, keep_awake, comfy_watch, progress_listener, ollama_watch):
         threading.Thread(target=target, daemon=True).start()
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        server = Server(("127.0.0.1", PORT), Handler)
     except OSError:
         print(f"Storyboard is already running. Opening http://127.0.0.1:{PORT}")
-        webbrowser.open(f"http://127.0.0.1:{PORT}")
+        if os.environ.get("STORYBOARD_NO_BROWSER") != "1":
+            webbrowser.open(f"http://127.0.0.1:{PORT}")
         return
     server.daemon_threads = True
     url = f"http://127.0.0.1:{PORT}"
@@ -2837,8 +2903,9 @@ def main():
     def stop(*_):
         raise KeyboardInterrupt
 
-    for sig in (signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, stop)
+    for name in ("SIGTERM", "SIGHUP", "SIGBREAK"):  # Windows has no SIGHUP; SIGBREAK is its Ctrl+Break
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), stop)
     threading.Thread(target=ensure_comfy_quietly, daemon=True).start()
     music.percussion.ensure()   # the recorded drums: made again here if a newer version cuts them differently
     if os.environ.get("STORYBOARD_NO_BROWSER") != "1":

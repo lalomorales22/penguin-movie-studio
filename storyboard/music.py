@@ -14,6 +14,7 @@ import json
 import math
 import mimetypes
 import os
+import platform
 import re
 import secrets
 import shutil
@@ -43,19 +44,34 @@ def _first(paths, fallback):
     return next((str(p) for p in paths if Path(p).exists()), fallback)
 
 
-LILY = os.environ.get("LILYPOND") or _first(["/opt/homebrew/bin/lilypond", "/usr/local/bin/lilypond"],
-                                             shutil.which("lilypond") or "lilypond")
-CLAUDE = os.environ.get("CLAUDE_BIN") or _first(
-    [Path.home() / ".local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"], shutil.which("claude") or "claude")
+WINDOWS = os.name == "nt"
+SETUP_FILE = "setup.bat" if WINDOWS else "setup.command"   # the file the messages tell people to double-click
+TERMINAL = "PowerShell" if WINDOWS else "Terminal"
+# Where the helpers are when they are not on the PATH the app was started with. On Windows, setup puts LilyPond
+# into the app's own tools folder and Claude Code installs itself under the user's folder.
+if WINDOWS:
+    _LILY_PLACES = [HERE.parent / "tools" / "lilypond" / "bin" / "lilypond.exe"]
+    _CLAUDE_PLACES = [Path.home() / ".local" / "bin" / "claude.exe"]
+else:
+    _LILY_PLACES = ["/opt/homebrew/bin/lilypond", "/usr/local/bin/lilypond"]
+    _CLAUDE_PLACES = [Path.home() / ".local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+LILY = os.environ.get("LILYPOND") or _first(_LILY_PLACES, shutil.which("lilypond") or "lilypond")
+CLAUDE = os.environ.get("CLAUDE_BIN") or _first(_CLAUDE_PLACES, shutil.which("claude") or "claude")
 FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
 # Any Chromium-family browser can make the audio. None of the user's own browser data is touched.
-BROWSERS = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-    str(Path.home() / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-]
+if WINDOWS:  # Edge comes with Windows, so there is always one
+    BROWSERS = [str(Path(base) / where)
+                for where in ("Google/Chrome/Application/chrome.exe", "Microsoft/Edge/Application/msedge.exe",
+                              "BraveSoftware/Brave-Browser/Application/brave.exe", "Chromium/Application/chrome.exe")
+                for base in (os.environ.get(k) for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")) if base]
+else:
+    BROWSERS = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        str(Path.home() / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+    ]
 
 
 def browser():
@@ -63,6 +79,8 @@ def browser():
     if env:
         return env if Path(env).exists() else None
     found = _first(BROWSERS, "")
+    if WINDOWS:
+        return found or shutil.which("chrome") or shutil.which("msedge")
     return found or shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")
 
 
@@ -202,8 +220,19 @@ def tools(wait=True):
 
 
 def status():
-    return {**(tools() or {}), "sounds": sounds_have(), "sounds_wanted": len(STARTER), "fetch": dict(FETCH), "percussion": percussion.status(),
+    return {**(tools() or {}), "system": platform.system(), "sounds": sounds_have(), "sounds_wanted": len(STARTER), "fetch": dict(FETCH), "percussion": percussion.status(),
             "have": [i for i, name in enumerate(GM_SAMPLE) if sound_file(name).exists()]}  # the instruments that are here
+
+
+def missing_for_composing(t):
+    """Why music cannot be written with what `t` (see tools) found, or "" when all of that is here."""
+    if not t["lilypond"]:
+        return f"LilyPond is not installed (run {SETUP_FILE})."
+    if not t["claude"]:
+        return f"Claude Code is not installed, so nothing can compose (run {SETUP_FILE})."
+    if t["claudeSignedIn"] is False:
+        return f"Claude Code is not signed in. Open {TERMINAL}, run claude once and sign in."
+    return ""
 
 
 def composer_ready():
@@ -212,12 +241,8 @@ def composer_ready():
     t = tools(wait=False)
     if t is None:
         return None, "Checking what is installed…"
-    if not t["lilypond"]:
-        return False, "LilyPond is not installed (run setup.command)."
-    if not t["claude"]:
-        return False, "Claude Code is not installed, so nothing can compose (run setup.command)."
-    if t["claudeSignedIn"] is False:
-        return False, "Claude Code is not signed in. Open Terminal, run claude once and sign in."
+    if missing_for_composing(t):
+        return False, missing_for_composing(t)
     if not t["chrome"]:
         return False, "Turning music into an audio file needs Google Chrome, Chromium, Edge or Brave on this computer."
     return True, ""
@@ -243,7 +268,8 @@ def engrave(ly):
                 for f in d.iterdir():
                     f.unlink()
                 (d / "score.ly").write_text(source, encoding="utf-8")
-                _, _, said = run(LILY, ["-dbackend=cairo", "--svg", "--pdf", "-dno-point-and-click", "-I", str(WEB),
+                # (the folder is named with forward slashes: LilyPond takes those on every system)
+                _, _, said = run(LILY, ["-dbackend=cairo", "--svg", "--pdf", "-dno-point-and-click", "-I", WEB.as_posix(),
                                         "-o", "out", "score.ly"], cwd=d, timeout=180)
                 return said, os.listdir(d)
 
@@ -263,8 +289,9 @@ def engrave(ly):
             midi_files = sorted((f for f in files if re.match(r"^out(-\d+)?\.midi?$", f)), key=page)
             b64 = lambda f: base64.b64encode((d / f).read_bytes()).decode()
             lines = [l for l in err.split("\n") if l.strip() and not _NOISE.match(l.strip())]
-            missing = ("LilyPond is not installed on this computer. Double-click setup.command in the app's folder "
-                       "(or run: brew install lilypond), then start the app again.") if "Could not find" in err else ""
+            missing = (f"LilyPond is not installed on this computer. Double-click {SETUP_FILE} in the app's folder"
+                       + ("" if WINDOWS else " (or run: brew install lilypond)")
+                       + ", then start the app again.") if "Could not find" in err else ""
             perf = None
             if midi_files and listened and "perform.txt" in files:
                 try:
@@ -558,11 +585,26 @@ FILM_BLOCK = re.compile(r"```film[^\n]*\n([\s\S]*?)```", re.I)
 
 
 def ask_claude(prompt, model=""):
-    args = ["-p", "--system-prompt", system_prompt(), "--tools", "", "--strict-mcp-config", "--no-session-persistence",
+    system, kept = ["--system-prompt", system_prompt()], None
+    if WINDOWS:
+        # A Windows command line is limited in length and has its own ideas about quotes and line breaks,
+        # so there the instructions travel in a file.
+        fd, kept = tempfile.mkstemp(prefix="storyboard-composer-", suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(system[1])
+        system = ["--system-prompt-file", kept]
+    args = ["-p", *system, "--tools", "", "--strict-mcp-config", "--no-session-persistence",
             "--disable-slash-commands"]
     if model and re.match(r"^[a-z0-9.\-]+$", model, re.I):
         args += ["--model", model]
-    code, out, err = run(CLAUDE, args, cwd=tempfile.gettempdir(), text=prompt, timeout=900, env=claude_env())
+    try:
+        code, out, err = run(CLAUDE, args, cwd=tempfile.gettempdir(), text=prompt, timeout=900, env=claude_env())
+    finally:
+        if kept:
+            try:
+                os.unlink(kept)
+            except OSError:
+                pass
     if code != 0 or not out.strip():
         raise RuntimeError((err or out or "Claude did not answer.").strip()[:600])
     return out.strip()
@@ -1194,7 +1236,7 @@ def _send(h, code, body, ctype="application/json", headers=None):
     h.end_headers()
     try:
         h.wfile.write(data)
-    except (BrokenPipeError, ConnectionResetError):
+    except ConnectionError:  # the browser went away (broken pipe, reset; on Windows: aborted)
         pass
 
 
