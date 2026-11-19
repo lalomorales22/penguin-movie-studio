@@ -100,6 +100,28 @@ def engine_python():
     return venv / "Scripts" / "python.exe" if WINDOWS else venv / "bin" / "python"
 
 
+def stop_process(proc, patience=3.0):
+    """Stop a program this app started, together with whatever it started itself.
+    On Windows the engine's python.exe and the hf command are small starters that run the real program as a child,
+    so the whole family is stopped by name of its parent (taskkill /T). Elsewhere the program is asked to stop.
+    Waits up to `patience` seconds for it to be gone and then insists; None does not wait at all."""
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        if WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=20)
+        else:
+            proc.terminate()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if patience is None:
+        return
+    try:
+        proc.wait(timeout=patience)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
 def awake_command():
     """A command that keeps this computer from going to sleep for as long as it runs, or None when there is no way.
     On a Mac that is caffeinate. Windows has no such program, so a small Python of our own asks Windows to stay
@@ -681,7 +703,8 @@ def ensure_root():
 def set_root(path):
     p = Path(str(path or "")).expanduser()
     if not p.is_absolute():
-        raise ValueError("Give the full path to a folder, for example /Users/you/MODELS.")
+        raise ValueError("Give the full path to a folder, for example "
+                         + (r"D:\MODELS" if WINDOWS else "/Users/you/MODELS") + ".")
     if not p.parent.is_dir():
         raise ValueError(f"{p.parent} does not exist.")
     try:
@@ -1354,8 +1377,7 @@ def _hf_download(job, files):
         job["proc"] = None
         return code, tail
     finally:
-        if awake is not None:
-            awake.terminate()
+        stop_process(awake, None)
 
 
 def _plain_tail(tail, code):
@@ -1581,12 +1603,12 @@ def cancel_job(job_id):
         except Exception:
             pass
     if proc and proc.poll() is None:
-        for sig in (signal.SIGTERM, getattr(signal, "SIGKILL", signal.SIGTERM)):  # Windows has no SIGKILL
+        if os.name != "posix":   # Windows: hf.exe is a starter, the download itself is its child
+            stop_process(proc)
+            return
+        for sig in (signal.SIGTERM, signal.SIGKILL):
             try:
-                if os.name == "posix":
-                    os.killpg(proc.pid, sig)
-                else:
-                    proc.kill()
+                os.killpg(proc.pid, sig)
             except (ProcessLookupError, OSError):
                 break
             try:

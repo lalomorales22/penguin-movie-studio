@@ -607,13 +607,7 @@ def ensure_comfy():
         if not py.exists():
             RUNTIME["comfy"] = "down"
             raise ComfyDown(f"ComfyUI was not found at {COMFY_DIR}")
-        proc = RUNTIME.get("comfy_proc")
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+        models.stop_process(RUNTIME.get("comfy_proc"), 20)
         port = str(urlparse(COMFY_URL).port or 8188)
         install_nodes()
         RUNTIME["comfy"] = "starting"
@@ -2169,7 +2163,7 @@ def keep_awake():
                 if awake:
                     RUNTIME["awake_proc"] = subprocess.Popen(awake)
             elif not want and alive:
-                proc.terminate()
+                models.stop_process(proc, None)
                 RUNTIME["awake_proc"] = None
         except Exception:
             log("keep_awake error", traceback.format_exc())
@@ -2919,9 +2913,7 @@ def main():
     finally:
         models.shutdown()  # stop any download in progress (it resumes next time)
         for key in ("awake_proc", "comfy_proc", "ollama_proc"):
-            proc = RUNTIME.get(key)
-            if proc is not None and proc.poll() is None:
-                proc.terminate()
+            models.stop_process(RUNTIME.get(key), None)
 
 
 def ensure_comfy_quietly():

@@ -14,8 +14,14 @@ picture; the Models page reads this computer's drives; a second copy of the app 
 helper runs. With --engine the app also starts the picture and video engine (on the processor, which is enough to
 see that it starts) and the engine is asked for the app's own add-on.
 
+Two more options are there for GitHub's machines, which are thrown away after each run:
+  --claude     Claude Code has to be found (the workflow installs it first)
+  --download   really download from Hugging Face through the Models page: the Fast video add-on (332 MB) into the
+               engine's models folder, and then the start of the Video kit, which is stopped after a few megabytes
+               to see that stopping works. Do not use it on a computer you keep: it leaves those files there.
+
 What it cannot try: drawing a picture or filming a clip. That needs the models and a graphics card.
-Nothing is left behind (--keep keeps the data folder, to look at what was made).
+Without --download nothing is left behind (--keep keeps the data folder, to look at what was made).
 """
 import json
 import os
@@ -39,6 +45,8 @@ if os.name == "nt" and not sys.flags.utf8_mode:  # the app's files are UTF-8 (se
 
 ENGINE = "--engine" in sys.argv
 KEEP = "--keep" in sys.argv
+CLAUDE = "--claude" in sys.argv
+DOWNLOAD = "--download" in sys.argv
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 RESULTS = []
 SCORE = r'''\version "2.24.0"
@@ -221,6 +229,7 @@ def main():
             tools.update(web.get("/music/api/status", timeout=90))
             assert tools.get("lilypond"), "LilyPond was not found"
             assert tools.get("chrome"), "no Chrome, Edge, Brave or Chromium was found"
+            assert tools.get("claude") or not CLAUDE, "Claude Code was not found, though setup was told to install it"
             return f"LilyPond {tools['lilypond']}, a browser, Claude Code: {tools.get('claude') or 'not installed (only composing needs it)'}"
 
         @check("LilyPond engraves a score and writes down its dynamics")
@@ -289,22 +298,32 @@ def main():
             assert "already running" in r.stdout, "it said: " + (r.stdout + r.stderr)[-300:]
             return "it said it is already running and stopped"
 
-        @check("the keep-awake helper runs")
+        @check("the keep-awake helper runs, and stops when it is stopped")
         def _():
             assert models.engine_python().exists(), "the engine's Python is not at " + str(models.engine_python())
             cmd = models.awake_command()
             assert cmd, "there is nothing to keep this computer awake with"
+
+            def listed():  # Windows can say who is holding it awake (it needs an administrator window for that)
+                r = subprocess.run(["powercfg", "/requests"], capture_output=True, text=True, errors="replace")
+                return "python" in r.stdout.lower(), (r.stdout.strip() or r.stderr.strip())[:80]
+
             helper = subprocess.Popen(cmd)
             try:
                 time.sleep(2.5)
                 assert helper.poll() is None, f"it stopped at once (exit code {helper.returncode})"
-                held = ""
-                if os.name == "nt":  # Windows can say who is holding it awake (needs an administrator window)
-                    r = subprocess.run(["powercfg", "/requests"], capture_output=True, text=True, errors="replace")
-                    held = ", Windows lists the request" if "python" in r.stdout.lower() else ", (Windows did not list it: " + (r.stdout.strip()[:80] or r.stderr.strip()[:80]) + ")"
-                return Path(cmd[0]).name + " stayed up" + held
+                held, said = listed() if os.name == "nt" else (False, "")
             finally:
-                helper.terminate()
+                models.stop_process(helper)   # the way the app itself stops it
+            assert helper.poll() is not None, "it is still running after being stopped"
+            note = ""
+            if os.name == "nt" and held:
+                time.sleep(1)
+                assert not listed()[0], "Windows still lists the request: the program behind python.exe was not stopped"
+                note = ", Windows listed its request and dropped it afterwards"
+            elif os.name == "nt":
+                note = f", (Windows did not list it: {said})"
+            return Path(cmd[0]).name + " stayed up" + note
 
         if ENGINE:
             @check("the app starts the picture and video engine")
@@ -321,6 +340,69 @@ def main():
                 log = data / "comfyui.log"
                 tail = log.read_text(encoding="utf-8", errors="replace")[-1500:] if log.exists() else "(no engine log)"
                 raise RuntimeError("the engine did not come up within 10 minutes. Its log ends:\n" + tail)
+        if DOWNLOAD:
+            def kit(kid):
+                return next(k for k in web.get("/models/api/status", timeout=60)["kits"] if k["id"] == kid)
+
+            def staged(kid):   # bytes waiting in the staging area of one kit
+                folder = models.STAGING / kid
+                return sum(f.stat().st_size for f in folder.rglob("*") if f.is_file()) if folder.exists() else 0
+
+            @check("a model file is downloaded from Hugging Face and put in its place (the Fast video add-on)")
+            def _():
+                f = kit("fast")["files"][0]
+                where = models.COMFY_MODELS / f["folder"] / f["name"]
+                if f["have"]:
+                    return "it is here already: nothing was downloaded"
+                web.post("/models/api/kit/download", {"id": "fast"})
+                deadline = time.time() + 900
+                while time.time() < deadline:
+                    k = kit("fast")
+                    if k["files"][0]["have"] and not k["job"]:
+                        assert where.stat().st_size == f["bytes"], f"{where.stat().st_size} bytes, expected {f['bytes']}"
+                        assert not (models.STAGING / "fast").exists(), "its staging folder was left behind"
+                        return f"{f['bytes'] / 1e6:.0f} MB, now in models/{f['folder']}"
+                    if not k["job"] and k["last"]:
+                        raise RuntimeError(f"the download ended as {k['last']['state']}: {k['last']['error']}")
+                    time.sleep(2)
+                raise RuntimeError("not finished within 15 minutes")
+
+            @check("a download that is stopped really stops (the Video kit, stopped after a few megabytes)")
+            def _():
+                k = kit("video")
+                if all(f["have"] for f in k["files"]):
+                    return "the Video kit is here already: nothing was downloaded"
+                job = web.post("/models/api/kit/download", {"id": "video"})
+                deadline = time.time() + 180
+                while True:
+                    k = kit("video")
+                    if not k["job"]:
+                        last = k["last"] or {}
+                        raise RuntimeError(f"it ended by itself as {last.get('state')}: {last.get('error')}")
+                    if k["job"].get("done", 0) >= 8e6:
+                        break
+                    if time.time() > deadline:
+                        raise RuntimeError("nothing arrived within 3 minutes")
+                    time.sleep(1)
+                web.post("/models/api/cancel", {"id": job["id"]})
+                deadline = time.time() + 30
+                while kit("video")["job"]:
+                    if time.time() > deadline:
+                        raise RuntimeError("it was still listed as downloading 30 seconds after being stopped")
+                    time.sleep(1)
+                last = kit("video")["last"] or {}
+                assert last.get("state") == "cancelled", f"it ended as {last.get('state')}: {last.get('error')}"
+                time.sleep(2)
+                before = staged("video")
+                time.sleep(6)
+                after = staged("video")
+                assert after == before, f"something is still downloading: {before} bytes, then {after} six seconds later"
+                still = ""
+                if os.name == "nt":
+                    r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq hf.exe", "/NH"], capture_output=True, text=True, errors="replace")
+                    assert "hf.exe" not in r.stdout.lower(), "hf.exe is still running: " + r.stdout.strip()[:200]
+                    still = ", no hf.exe left"
+                return f"stopped with {before / 1e6:.0f} MB fetched, and nothing grew afterwards{still}"
     finally:
         stop(app)
         if out:

@@ -12,6 +12,7 @@
 #   setup.bat -Gguf           also install the add-on that lets ComfyUI read GGUF prompt readers
 #   setup.bat -Yes            answer yes to winget's licence questions
 #   setup.bat -NoQuestions    ask nothing (Claude Code is then left as it is)
+#   setup.bat -Claude         install Claude Code without asking first
 #   setup.bat -TorchIndex cu126 -PythonVersion 3.12     for NVIDIA cards older than the 20 series
 #
 # Keep this file plain ASCII: Windows PowerShell misreads other characters in a script without a marker.
@@ -20,6 +21,7 @@ param(
     [switch]$Gguf,
     [switch]$Yes,
     [switch]$NoQuestions,
+    [switch]$Claude,
     [string]$TorchIndex = "cu130",
     [string]$PythonVersion = "3.13"
 )
@@ -64,7 +66,8 @@ function Refresh-Path {
 function Winget-Install($Id) {
     $more = @()
     if ($Yes) { $more = @("--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity") }
-    & winget install --id $Id -e --source winget @more | Out-Host
+    # (not sent through a pipe: winget then draws its progress bar in place and can ask its questions)
+    & winget install --id $Id -e --source winget @more
     Refresh-Path
 }
 
@@ -196,7 +199,14 @@ if (Test-Path -LiteralPath "ComfyUI\main.py") {
     elseif (-not (Have "uv")) { Miss "The engine's Python parts cannot be installed without uv (see above)" }
     else {
         Bold "Installing the engine's Python parts (several gigabytes, this takes a while)"
-        if (-not (Test-Path -LiteralPath $Py)) { & uv venv --python $PythonVersion "ComfyUI\.venv" | Out-Host }
+        if (-not (Test-Path -LiteralPath $Py)) {
+            # The engine gets a Python of its own, which uv downloads. A Python that is already on this PC (from
+            # the Microsoft Store or Anaconda, say) is left alone: an environment built on one of those can fail
+            # in ways that are hard to see.
+            $env:UV_PYTHON_PREFERENCE = "only-managed"
+            & uv venv --python $PythonVersion "ComfyUI\.venv" | Out-Host
+            Remove-Item Env:UV_PYTHON_PREFERENCE -ErrorAction SilentlyContinue
+        }
         # PyTorch first, from the list that has the builds for NVIDIA cards. Left to itself Windows gets a PyTorch
         # that only works on the processor.
         & uv pip install --python $Py torch torchvision --index-url "https://download.pytorch.org/whl/$TorchIndex" | Out-Host
@@ -238,12 +248,18 @@ if (Have "claude") {
         if ($answer -ne "s") { & claude }
     }
 }
-elseif ($Check -or $NoQuestions) { Warn "Claude Code is not installed. Everything works without it except writing music." }
+elseif ($Check -or ($NoQuestions -and (-not $Claude))) { Warn "Claude Code is not installed. Everything works without it except writing music." }
 else {
-    Bold "Claude Code writes the music for your movies. Everything else works without it."
-    $answer = Read-Host "  Install Claude Code now? (Enter = yes, s = skip)"
+    $answer = ""
+    if ($Claude) { Bold "Installing Claude Code (it writes the music for your movies)" }
+    else {
+        Bold "Claude Code writes the music for your movies. Everything else works without it."
+        $answer = Read-Host "  Install Claude Code now? (Enter = yes, s = skip)"
+    }
     if ($answer -ne "s") {
-        try { Invoke-RestMethod -UseBasicParsing -Uri "https://claude.ai/install.ps1" | Invoke-Expression } catch { Write-Host "  $_" }
+        # Anthropic's own installer, run in a PowerShell of its own: it changes settings and ends with "exit",
+        # which would otherwise end this setup too.
+        & powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod -UseBasicParsing -Uri https://claude.ai/install.ps1 | Invoke-Expression"
         Refresh-Path
         if (Have "claude") { Ok "Claude Code installed. Run setup again, or run claude once, to sign in." }
         else { Warn "Claude Code could not be installed: https://claude.com/claude-code" }
