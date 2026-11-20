@@ -9,6 +9,7 @@ while keeping the Mac awake.
 Runs on the Python that ComfyUI already uses. Standard library only, plus aiohttp
 (which ComfyUI installs) for the live progress bar.
 """
+import hashlib
 import json
 import math
 import mimetypes
@@ -52,6 +53,7 @@ for _ext, _type in ((".js", "text/javascript"), (".mjs", "text/javascript"), (".
 # it look for ffmpeg and the other helpers there)
 import models  # the Models section (models.py and models.html): kits, downloads, which file each job uses
 import music  # the Music section (music.py and the music/ folder)
+import voices  # the narrator: a movie's lines spoken on this computer (voices.py)
 
 PORT = int(os.environ.get("STORYBOARD_PORT", "8777"))
 HERE = Path(__file__).resolve().parent
@@ -134,7 +136,10 @@ SFX_MAX = 20  # seconds: the longest sound made in one go; a longer shot is quie
 SOUND_LEVELS = {"quiet": 0.4, "medium": 0.8, "loud": 1.5}   # against shot sounds brought to -24 LUFS: about 16, 10 and 4.5 dB under the music
 NO_SONGS = "The song maker is not on this computer yet. Open Models and download the Songs kit."
 NO_SOUNDS = "The sound-effects maker is not on this computer yet. Open Models and download the Sound effects kit."
-KIND_WORDS = {"story": "story film", "book": "picture-book film", "commercial": "commercial", "movie": "film",
+# The narrator: each shot's narration line read aloud (voices.py), laid over the movie. While a line is spoken the
+# music and the sounds of the shots are turned down by this much, and come back up after it.
+VOICE_DIPS = {"quiet": -15.0, "medium": -11.0, "loud": -7.0}
+KIND_WORDS ={"story": "story film", "book": "picture-book film", "commercial": "commercial", "movie": "film",
               "music": "music video", "other": "film"}
 AUDIO_EXT = (".mp3", ".m4a", ".wav", ".aac", ".flac", ".ogg")
 
@@ -447,7 +452,7 @@ def calib_key(job):
         return None
     if job["kind"] == "music":
         return "music" if job.get("compose", True) and not job.get("song") else None
-    if job["kind"] == "sfx":
+    if job["kind"] in ("sfx", "voice"):
         return None
     return "video_fast" if job_params(job)[2] else "video"
 
@@ -484,6 +489,8 @@ def estimate_job(job):
         return (90 + 1.6 * movie) * S["calib"]["music"]
     if job["kind"] == "sfx":  # two or three seconds a sound; the first of a movie also has the descriptions written
         return 10
+    if job["kind"] == "voice":  # a line is spoken in a fraction of a second
+        return 3
     if job["kind"] == "ref":
         return estimate("image", "square")
     p = P.get(job["project"])
@@ -1154,6 +1161,8 @@ def job_label(job):
     unit = KINDS.get(p.get("kind"), KINDS["other"])["unit"].lower()
     if job["kind"] == "sfx":
         return f"Sounds: {p['name']}, {unit} {i + 1}" if s else f"Sounds: {p['name']} (deleted {unit})"
+    if job["kind"] == "voice":
+        return f"Narration: {p['name']}, {unit} {i + 1}" if s else f"Narration: {p['name']} (deleted {unit})"
     what = "Picture" if job["kind"] == "image" else f"Video ({job_params(job)[0]} s{', fast' if job_params(job)[2] else ''})"
     return f"{what}: {p['name']}, {unit} {i + 1}" if s else f"{what}: {p['name']} (deleted {unit})"
 
@@ -1270,6 +1279,8 @@ def begin_project(pid):
         p.pop("begin_error", None)
         if (p.get("sounds") or {}).get("on") and models.kit_ready("effects"):
             n += queue_sounds(pid)
+        if (p.get("narrator") or {}).get("on") and voices.state()["ready"]:
+            n += queue_narration(pid)
         if (p.get("music") or {}).get("on") and not p.get("soundtrack") and not pending(pid, None, "music"):
             add_job(pid, None, "music", compose=True)  # after the videos, before the movie is put together
             n += 1
@@ -1287,6 +1298,30 @@ def queue_sounds(pid, again=False):
             and not pending(pid, s["id"], "sfx")]
     for s in todo:
         add_job(pid, s["id"], "sfx")
+    return len(todo)
+
+
+def voice_print_of(voice, words):
+    return hashlib.sha1(f"{voice}\n{words}".encode()).hexdigest()[:12] if words else ""
+
+
+def voice_print(p, s):
+    """What a shot's spoken line was made from: the words and the voice. When either changes, the line is stale."""
+    return voice_print_of((p.get("narrator") or {}).get("voice") or "", " ".join((s.get("caption") or "").split()))
+
+
+def narration_todo(p, again=False):
+    """The shots whose narration line still has to be read aloud: never read, or changed since (or all of them)."""
+    return [s for s in p["shots"] if (s.get("caption") or "").strip()
+            and (again or not s.get("voice") or s.get("voice_print") != voice_print(p, s))
+            and not pending(p["id"], s["id"], "voice")]
+
+
+def queue_narration(pid, again=False):
+    """Queue the reading of every narration line that has not been read yet, or has changed since."""
+    todo = narration_todo(P[pid], again)
+    for s in todo:
+        add_job(pid, s["id"], "voice")
     return len(todo)
 
 
@@ -1377,7 +1412,7 @@ def blocked(job):
     if not p:
         return "The project was deleted."
     if job["kind"] == "movie":
-        if any(j["project"] == p["id"] and j["kind"] in ("image", "video", "music", "sfx") and j["status"] in ("waiting", "running")
+        if any(j["project"] == p["id"] and j["kind"] in ("image", "video", "music", "sfx", "voice") and j["status"] in ("waiting", "running")
                for j in S["jobs"]):
             return "wait"
         return None if any(s.get("video") for s in p["shots"]) else "There are no finished videos to join."
@@ -1980,7 +2015,49 @@ def run_sfx_job(job):
         produced.unlink(missing_ok=True)
 
 
+def run_voice_job(job):
+    """Read one shot's narration line aloud in the project's voice, on this computer."""
+    with LOCK:
+        p = P[job["project"]]
+        _, s = find_shot(p, job["shot"])
+        if s is None:
+            raise JobFailed("The shot was deleted while this was being made.")
+        words = " ".join((s.get("caption") or "").split())
+        want = (p.get("narrator") or {}).get("voice") or ""
+        mdir = media_dir(p["id"])
+        mdir.mkdir(parents=True, exist_ok=True)
+        name = f"{s['id']}_voice_{len(s.get('voices', [])) + 1}.wav"
+    if not words:
+        raise JobFailed("Write this shot's narration line first.")
+    job["stage"] = "Reading the line aloud"
+    ensure_ollama()
+    st = voices.state(block=True)
+    if not st["ready"]:
+        raise JobFailed(st["why"])
+    voice = voices.pick(want)
+    try:
+        length = voices.speak(words, voice, mdir / name)
+    except ValueError as e:
+        raise JobFailed(str(e))
+    with LOCK:
+        p = P.get(job["project"])
+        _, s = find_shot(p, job["shot"]) if p else (-1, None)
+        if s is None:
+            (mdir / name).unlink(missing_ok=True)
+            raise JobFailed("The shot was deleted while this was being made.")
+        nar = p.setdefault("narrator", {"on": True, "voice": "", "music": "medium"})
+        if not nar.get("voice"):
+            nar["voice"] = voice          # the first line read decides the voice, until another is chosen
+        s.setdefault("voices", []).append(name)
+        s["voice"] = name
+        s["voice_print"] = voice_print_of(want or nar["voice"], words)   # what this reading was made from
+        s["voice_seconds"] = round(length, 2)
+        save_project(p)
+
+
 def run_job(job):
+    if job["kind"] == "voice":
+        return run_voice_job(job)
     if job["kind"] == "movie":
         try:
             export_movie(job["project"])
@@ -2191,7 +2268,7 @@ def job_view(job, now):
         pr = PROGRESS.get(job.get("prompt_id"))
         frac = min(elapsed / est, 0.97) if est else 0
         phase = ("Joining the clips" if job["kind"] == "movie" else job.get("stage") or "Getting ready"
-                 if job["kind"] in ("music", "sfx") else "Getting the model ready")
+                 if job["kind"] in ("music", "sfx", "voice") else "Getting the model ready")
         part, parts = job.get("part", 1), job.get("parts", 1)
         later = est * (parts - part) / parts  # parts of a long clip that have not started yet
         if pr and pr[1]:
@@ -2248,6 +2325,12 @@ def state_view():
                           styles=[[k, music.STYLE_LABEL[k]] for k in MUSIC_STYLES]),
             # the two extras: can a song be made here, can the sounds of the shots be made here
             "songs": models.kit_ready("songs"), "sounds": models.kit_ready("effects"),
+            # the narrator: is a voice here and which ones, and how many of each project's lines are read and up to date
+            "narrator": voices.state(),
+            "narration": {p["id"]: {"lines": sum(1 for s in p["shots"] if (s.get("caption") or "").strip()),
+                                    "read": sum(1 for s in p["shots"] if (s.get("caption") or "").strip() and s.get("voice")
+                                                and s.get("voice_print") == voice_print(p, s))}
+                          for p in P.values()},
             "music_stale": {p["id"]: True for p in P.values()
                             if (p.get("music") or {}).get("current") == "piece" and p["music"].get("print")
                             and music.fingerprint(p["music"].get("piece") or "") not in ("", p["music"]["print"])},
@@ -2310,13 +2393,16 @@ def export_movie(pid):
         music_len = mm.get("seconds") if mm.get("current") in ("piece", "song") else None
         sounds = dict(p.get("sounds") or {})
         sfx = [mdir / s["sfx"] if sounds.get("on") and s.get("sfx") and (mdir / s["sfx"]).exists() else None for s in used]
+        narrator = dict(p.get("narrator") or {})
+        said = [mdir / s["voice"] if narrator.get("on") and s.get("voice") and (s.get("caption") or "").strip()
+                and (mdir / s["voice"]).exists() else None for s in used]
     if not clips:
         raise ValueError("There are no finished videos to join yet.")
     out_dir = PROJECTS / pid / "exports"
     out_dir.mkdir(exist_ok=True)
     out = out_dir / f"{safe_name(p['name'])}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
     audio = audio if audio and audio.exists() else None
-    picture = out.with_name(out.stem + "_picture.mp4") if audio or any(sfx) else out
+    picture = out.with_name(out.stem + "_picture.mp4") if audio or any(sfx) or any(said) else out
     listing = out_dir / "_join.txt"
     # (forward slashes in the names: ffmpeg takes those on every system, and a backslash means something in this list)
     listing.write_text("".join("file '" + c.as_posix().replace("'", "'\\''") + "'\n" for c in clips))
@@ -2326,17 +2412,32 @@ def export_movie(pid):
     listing.unlink(missing_ok=True)
     if r.returncode != 0 or not picture.exists():
         raise ValueError("Joining the videos failed: " + r.stderr[-300:])
-    if audio or any(sfx):
+    spoken = None
+    if audio or any(sfx) or any(said):
         length = media_seconds(picture)
         cmd, chains, tracks = [FFMPEG, "-y", "-v", "error", "-i", str(picture)], [], []
         stereo = "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo"
+        under = ""   # while the narrator speaks, the music and the sounds of the shots are turned down (voices.dip)
+        if any(said):
+            # The narration: every line starts just after its own shot begins, on one track as long as the movie.
+            begins, at = [], 0.0
+            for clip in clips:
+                begins.append(at)
+                at += media_seconds(clip)
+            spoken = out.with_name(out.stem + "_narration.wav")
+            spans = voices.track(list(zip(begins, said)), length, spoken)
+            if spans:
+                under = ",volume='" + voices.dip(spans, VOICE_DIPS.get(narrator.get("music"), VOICE_DIPS["medium"])) + "':eval=frame"
+            else:
+                spoken.unlink(missing_ok=True)
+                spoken = None
         if audio:
             # The music runs under the whole picture and never changes its length: silence is added if the music is
             # shorter, and it fades out with the last shot if it is longer.
             runs_on = media_seconds(audio) > length + 5 or (music_len or length) > length + 0.75
             fade = min(2.5 if runs_on else 1.2, length / 3)
             cmd += ["-i", str(audio)]
-            chains.append(f"[1:a]{stereo},apad,afade=t=out:st={max(0.0, length - fade):.3f}:d={fade:.3f}[music]")
+            chains.append(f"[1:a]{stereo},apad,afade=t=out:st={max(0.0, length - fade):.3f}:d={fade:.3f}{under}[music]")
             tracks.append("[music]")
         if any(sfx):
             # The sounds of the shots: each one starts with its own shot and is faded at both ends.
@@ -2351,14 +2452,22 @@ def export_movie(pid):
                                   f"adelay={int(at * 1000)}:all=1,volume={louder:.1f}dB[s{n}]")
                     beds.append(f"[s{n}]")
                 at += d
-            chains.append("".join(beds) + (f"amix=inputs={len(beds)}:normalize=0," if len(beds) > 1 else "") + "apad[sounds]")
+            chains.append("".join(beds) + (f"amix=inputs={len(beds)}:normalize=0," if len(beds) > 1 else "") + "apad" + under + "[sounds]")
             tracks.append("[sounds]")
+        if spoken:
+            n = (len(cmd) - 4) // 2
+            cmd += ["-i", str(spoken)]
+            # (a little above the level the lines are kept at: the limiter at the end catches the few peaks this lifts too far)
+            chains.append(f"[{n}:a]{stereo},volume=2.5dB,apad[voice]")
+            tracks.append("[voice]")
         chains.append("".join(tracks) + (f"amix=inputs={len(tracks)}:normalize=0," if len(tracks) > 1 else "")
                       + "alimiter=limit=0.95:level=false[out]")
         cmd += ["-filter_complex", ";".join(chains), "-map", "0:v:0", "-map", "[out]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                 "-t", f"{length:.3f}", "-movflags", "+faststart", str(out)]
         r = subprocess.run(cmd, capture_output=True, text=True)
         picture.unlink(missing_ok=True)
+        if spoken:
+            spoken.unlink(missing_ok=True)
         if r.returncode != 0 or not out.exists():
             raise ValueError("Putting the sound under the movie failed: " + r.stderr[-300:])
     with LOCK:
@@ -2484,11 +2593,26 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 body = json.dumps(state_view()).encode()
             return self.send_json(None, raw=body)
+        if path == "/api/voice/sample":  # one sentence in a voice, to listen to before choosing it
+            return self.voice_sample(parse_qs(urlparse(self.path).query).get("voice", [""])[0])
         m = re.match(r"^/(media|movie)/([A-Za-z0-9]+)/([A-Za-z0-9_.\-]+)$", path)
         if m and m.group(2) in P:
             folder = media_dir(m.group(2)) if m.group(1) == "media" else PROJECTS / m.group(2) / "exports"
             return self.send_file(folder / m.group(3))
         self.fail("Not found", 404)
+
+    def voice_sample(self, voice):
+        st = voices.state(block=True)
+        if not st["ready"] or voice not in st["voices"]:
+            return self.fail(st["why"] or "That voice is not on this computer.", 404)
+        f = DATA / "voices" / (re.sub(r"[^A-Za-z0-9]+", "_", voice) + ".wav")   # kept: the same sentence next time
+        if not f.exists():
+            who = "the voice this model was made with" if voice == "default" else voice
+            try:
+                voices.speak(f"This is {who}. I can read your movie's narration aloud.", voice, f)
+            except ValueError as e:
+                return self.fail(str(e), 500)
+        return self.send_file(f)
 
     def read_body(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -2646,6 +2770,14 @@ class Handler(BaseHTTPRequestHandler):
                             so["on"] = bool(b["sounds"]["on"])
                         if b["sounds"].get("level") in SOUND_LEVELS:
                             so["level"] = b["sounds"]["level"]
+                    if isinstance(b.get("narrator"), dict):  # the narration lines read aloud over the movie
+                        nar = p.setdefault("narrator", {"on": False, "voice": "", "music": "medium"})
+                        if "on" in b["narrator"]:
+                            nar["on"] = bool(b["narrator"]["on"])
+                        if "voice" in b["narrator"]:
+                            nar["voice"] = clean(b["narrator"]["voice"], 60)
+                        if b["narrator"].get("music") in VOICE_DIPS:
+                            nar["music"] = b["narrator"]["music"]
                     save_project(p)
                     return {"ok": True}
                 if len(rest) == 3 and rest[0] == "cast":  # a character's reference picture
@@ -2744,6 +2876,20 @@ class Handler(BaseHTTPRequestHandler):
                     save_project(p)
                     save_state()
                     return {"added": n}
+                if rest == ["narrator", "make"]:  # read the narration lines aloud now ({"again": true} = every line anew)
+                    st = voices.state(block=True)
+                    if not st["ready"]:
+                        raise ValueError(st["why"])
+                    if not any((s.get("caption") or "").strip() for s in p["shots"]):
+                        raise ValueError("There is nothing to read yet. Write a narration line for at least one shot.")
+                    p.setdefault("narrator", {"on": False, "voice": "", "music": "medium"})["on"] = True
+                    n = queue_narration(pid, again=bool(b.get("again")))
+                    if not n:
+                        raise ValueError("Every narration line has been read aloud already.")
+                    requeue_movie(pid)
+                    save_project(p)
+                    save_state()
+                    return {"added": n}
                 if rest == ["music", "use"]:  # use a piece from the Music studio (again) as this movie's music
                     piece = str(b.get("piece") or (p.get("music") or {}).get("piece") or "")
                     music.read_piece(piece)
@@ -2813,6 +2959,19 @@ class Handler(BaseHTTPRequestHandler):
                                 raise ValueError("The sounds of this shot are already in the queue.")
                             add_job(pid, s["id"], "sfx")
                             requeue_movie(pid)
+                            save_state()
+                            return {"added": 1}
+                        if b.get("what") == "voice":  # this one shot's narration line read aloud (again)
+                            st = voices.state(block=True)
+                            if not st["ready"]:
+                                raise ValueError(st["why"])
+                            if not (s.get("caption") or "").strip():
+                                raise ValueError("Write this shot's narration line first.")
+                            if pending(pid, s["id"], "voice"):
+                                raise ValueError("This line is already in the queue.")
+                            add_job(pid, s["id"], "voice")
+                            if (p.get("narrator") or {}).get("on"):
+                                requeue_movie(pid)
                             save_state()
                             return {"added": 1}
                         added = queue_shot(pid, s["id"], "image" if b.get("what") == "image" else "video")

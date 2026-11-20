@@ -581,6 +581,20 @@ function buildProject(p, unit) {
           if (r) toast(ST.settings.mode === 'paused' ? 'Lined up, but the queue is paused. Choose Go now or Night mode at the top.' : 'On it. Each shot gets its sounds, then the movie is put together again with them.');
         } }, 'Make the sounds now')),
       h('div', { class: 'dim', id: 'shint', style: 'font-size:12.5px;margin-top:5px' }),
+      h('div', { class: 'mrow', style: 'margin-top:12px' },
+        h('label', { class: 'chk', style: 'margin:0' },
+          h('input', { type: 'checkbox', id: 'non', checked: !!(p.narrator || {}).on, onchange: e => act(`/api/project/${p.id}`, { narrator: { on: e.target.checked } }) }),
+          'Have a narrator read the narration lines aloud'),
+        h('select', { id: 'nvoice', title: 'Whose voice reads', onchange: e => act(`/api/project/${p.id}`, { narrator: { voice: e.target.value } }) }),
+        h('button', { class: 'small ghost', id: 'nlisten', title: 'Hear this voice say one sentence', onclick: listenVoice }, 'Listen'),
+        h('select', { id: 'nmusic', title: 'How loud the music stays while the narrator speaks', onchange: e => act(`/api/project/${p.id}`, { narrator: { music: e.target.value } }) },
+          [['quiet', 'music quiet under the voice'], ['medium', 'music medium under the voice'], ['loud', 'music loud under the voice']]
+            .map(([k, l]) => h('option', { value: k, selected: k === ((p.narrator || {}).music || 'medium') }, l))),
+        h('button', { class: 'small', id: 'nmake', onclick: async () => {
+          const r = await act(`/api/project/${p.id}/narrator/make`);
+          if (r) toast(ST.settings.mode === 'paused' ? 'Lined up, but the queue is paused. Choose Go now or Night mode at the top.' : 'On it. The lines are read aloud, then the movie is put together again with them.');
+        } }, 'Read the lines aloud now')),
+      h('div', { class: 'dim', id: 'nhint', style: 'font-size:12.5px;margin-top:5px' }),
       h('input', { type: 'file', id: 'musicfile', accept: 'audio/*,.mp3,.m4a,.wav,.aac,.flac,.ogg', style: 'display:none', onchange: e => uploadMusic(p.id, e.target) })));
   const shots = p.shots.map((s, i) => buildShot(p, s, i, unit));
   $('#main').replaceChildren(h('div', { id: 'proj' },
@@ -687,6 +701,37 @@ function patchMusic(p) {
     : sfail ? "Didn't work: " + (sfail.error || 'unknown problem')
     : have ? `${have} of ${all} shots have their sounds. They are made on this computer and mixed under the music.`
     : 'Made on this computer from a few words about each shot, and mixed under the music.';
+  // The narrator: each shot's narration line read aloud and laid over the movie.
+  const na = p.narrator || {}, N = ST.narrator || { ready: false, why: '', voices: [] }, nc = (ST.narration || {})[p.id] || { lines: 0, read: 0 };
+  const njobs = ST.jobs.filter(j => j.project === p.id && j.kind === 'voice');
+  const nrun = njobs.find(j => j.status === 'running'), nwait = njobs.filter(j => j.status === 'waiting').length, nfail = njobs.filter(j => j.status === 'failed').pop();
+  const non = $('#non'); if (document.activeElement !== non) non.checked = !!na.on;
+  non.disabled = !N.ready;
+  const nv = $('#nvoice');
+  if (nv.dataset.list !== N.voices.join('|')) {
+    nv.dataset.list = N.voices.join('|');
+    nv.replaceChildren(...N.voices.map(v => h('option', { value: v }, v === 'default' ? 'The model’s own voice' : v)));
+  }
+  setIfIdle(nv, N.voices.includes(na.voice) ? na.voice : N.voices.includes('Hugh') ? 'Hugh' : N.voices[0] || '');
+  nv.disabled = $('#nlisten').disabled = !N.ready; setIfIdle($('#nmusic'), na.music || 'medium');
+  $('#nmake').disabled = !N.ready || !!(nrun || nwait) || !nc.lines || nc.read >= nc.lines;
+  const nhint = $('#nhint');
+  nhint.className = !nrun && !nwait && nfail ? 'bad' : 'dim';
+  nhint.textContent = !N.ready ? N.why
+    : nrun ? `${nrun.phase || 'Reading the lines aloud'} · ${nwait} more waiting`
+    : nwait ? `${nwait} waiting in the queue`
+    : nfail ? "Didn't work: " + (nfail.error || 'unknown problem')
+    : !nc.lines ? 'Write a narration line for a shot (each shot has a Narration box) and the narrator reads it over that shot.'
+    : nc.read >= nc.lines ? `All ${plural(nc.lines, 'narration line')} are read aloud` + (na.on ? ' and laid over the movie, with the music turned down under the voice.' : '. Tick the box to hear them in the movie.')
+    : nc.read ? `${nc.read} of ${nc.lines} narration lines are read aloud and up to date.`
+    : `${plural(nc.lines, 'narration line')} to read. The voice is made on this computer; nothing is sent online.`;
+}
+let voiceAudio = null;
+function listenVoice() {
+  const v = $('#nvoice').value; if (!v) return;
+  if (voiceAudio) voiceAudio.pause();
+  voiceAudio = new Audio('/api/voice/sample?voice=' + encodeURIComponent(v));
+  voiceAudio.play().catch(() => toast('That voice could not be played.'));
 }
 async function uploadMusic(pid, input) {
   const f = input.files[0]; if (!f) return;
@@ -726,8 +771,13 @@ function buildShot(p, s, i, unit) {
           h('input', { type: 'text', style: 'flex:1;min-width:220px', maxlength: 240, 'data-t': 'sound', placeholder: 'slow footsteps on wet cobblestones, light rain, a car far away', value: s.sound || '', oninput: e => saveLater(s.id + 's', base, { sound: e.target.value }) }),
           h('button', { class: 'small', 'data-smake': '1', title: 'Make the sounds of this one (again)', onclick: () => act(base + '/make', { what: 'sound' }) }, 'Make'),
           h('audio', { 'data-sfx': '1', controls: true, preload: 'none', style: 'height:30px;max-width:230px', hidden: true }))),
-      h('label', { class: 'lbl' }, 'Narration (optional, used in the storybook)'),
+      h('label', { class: 'lbl' }, 'Narration (optional: the narrator reads it aloud, the storybook prints it)'),
       h('textarea', { rows: 2, maxlength: 4000, 'data-t': 'caption', placeholder: 'Pip had always wondered what the sky felt like.', oninput: e => saveLater(s.id + 'c', base, { caption: e.target.value }) }, s.caption || ''),
+      h('div', { 'data-vrow': '1', hidden: true },
+        h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px' },
+          h('button', { class: 'small', 'data-vmake': '1', title: 'Read this line aloud (again)', onclick: () => act(base + '/make', { what: 'voice' }) }, 'Read aloud'),
+          h('audio', { 'data-voice': '1', controls: true, preload: 'none', style: 'height:30px;max-width:230px', hidden: true }),
+          h('span', { class: 'dim', 'data-vnote': '1', style: 'font-size:12.5px' }))),
       h('div', { class: 'opts' },
         h('div', {}, h('label', { class: 'lbl' }, 'Video length'),
           h('select', { 'data-t': 'seconds', onchange: e => act(base, { seconds: +e.target.value }) }, ST.seconds_choices.map(n => h('option', { value: n }, plural(n, 'second') + (n > 5 ? ` (made in ${Math.ceil(n / 5)} parts)` : ''))))),
@@ -743,6 +793,15 @@ function patchShot(p, s, i, est, fast) {
   srow.hidden = !(ST.sounds || s.sfx);
   card.querySelector('[data-smake]').disabled = !ST.sounds || !(s.text || '').trim() || ST.jobs.some(j => j.project === p.id && j.shot === s.id && j.kind === 'sfx' && (j.status === 'waiting' || j.status === 'running'));
   if (player.dataset.file !== (s.sfx || '')) { player.dataset.file = s.sfx || ''; player.hidden = !s.sfx; if (s.sfx) player.src = `/media/${p.id}/${s.sfx}`; else player.removeAttribute('src'); }
+  // The narration line read aloud: shown once a voice is here, or the line has been read.
+  const vrow = card.querySelector('[data-vrow]'), vplay = card.querySelector('[data-voice]'), canSpeak = !!(ST.narrator || {}).ready;
+  vrow.hidden = !(canSpeak || s.voice);
+  card.querySelector('[data-vmake]').disabled = !canSpeak || !(s.caption || '').trim() || ST.jobs.some(j => j.project === p.id && j.shot === s.id && j.kind === 'voice' && (j.status === 'waiting' || j.status === 'running'));
+  if (vplay.dataset.file !== (s.voice || '')) { vplay.dataset.file = s.voice || ''; vplay.hidden = !s.voice; if (s.voice) vplay.src = `/media/${p.id}/${s.voice}`; else vplay.removeAttribute('src'); }
+  const words = (s.caption || '').trim().split(/\s+/).filter(Boolean).length, takes = s.voice ? s.voice_seconds || 0 : words / 2.6;
+  card.querySelector('[data-vnote]').textContent = !words ? '' : takes + 0.45 > (s.seconds || 5) + 0.3
+    ? `${s.voice ? 'Takes' : 'About'} ${takes.toFixed(1)} seconds to say, longer than this shot: it will run on into the next one.`
+    : s.voice ? `${takes.toFixed(1)} seconds` : '';
   const who = card.querySelector('[data-t="who"]');
   if (who && document.activeElement !== who && who.value.split(',').map(x => x.trim()).filter(Boolean).join(', ') !== (s.who || []).join(', ')) who.value = (s.who || []).join(', ');
   setIfIdle(card.querySelector('[data-t="seconds"]'), String(s.seconds || 3));

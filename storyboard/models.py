@@ -76,6 +76,7 @@ def find_new_programs():
 find_new_programs()  # before anything below (or in the modules loaded after this one) looks for ffmpeg and the rest
 
 import percussion  # the recorded drums and percussion: a kit that fetches and cuts its own recordings
+import voices  # the narrator's voice: Ollama fetches it and does the speaking
 
 HERE = Path(__file__).resolve().parent
 COMFY_DIR = Path(os.environ.get("COMFY_DIR", HERE.parent / "ComfyUI")).resolve()
@@ -269,6 +270,14 @@ KITS = [
                  "note": "Free for personal and hobby use. If you earn money with what it makes, you must register "
                          "with Stability AI (free below 1 million US dollars of revenue a year). Downloading and "
                          "using these files means you accept that licence. Powered by Stability AI."}},
+    # The narrator's voice is not a file in the engine's folder: Ollama fetches it and does the speaking (voices.py).
+    {"id": "voices", "kind": "voice", "optional": True, "title": "Narrator voices (Phonon)",
+     "about": "Reads a movie's narration lines aloud, in a voice you choose from about forty, and lays them over the "
+              "music. Everything is spoken on this computer. An extra.",
+     "model": voices.MODEL, "bytes": 112861759,
+     "licence": {"name": "apache-2.0", "url": "https://ollama.com/library/phonon",
+                 "note": "English only. The voices are made by Gradium and come through Ollama, which has to be version "
+                         "0.40.9 or newer. So far Ollama can only speak on Apple silicon Macs."}},
 ]
 KIT = {k["id"]: k for k in KITS}
 
@@ -324,6 +333,8 @@ def _kit_state(kit, snap, block=False):
             return "downloading"
         w = writer_status(block=block)
         return "ready" if w["models"] else "missing"
+    if kind == "voice":
+        return "downloading" if live else "ready" if voices.state(block=block)["ready"] else "missing"
     files = _kit_files(kit)
     if kind == "fast":
         m, b = kit["merged"], kit["base"]
@@ -366,6 +377,10 @@ def kit_view(kit, snap):
     elif kind == "ollama":
         v["writer"] = writer_status()
         v["suggest"] = kit["suggest"]
+    elif kind == "voice":
+        v["writer"] = writer_status()          # is Ollama installed and running: it does the downloading and the speaking
+        v["voice"] = voices.state(block=True)
+        v["bytes"] = kit["bytes"]
     else:
         files = _kit_files(kit)
         v["files"] = files
@@ -1475,6 +1490,7 @@ def run_ollama_job(job):
     finally:
         job["conn"] = None
         _writer["at"] = 0.0  # look at the model list afresh
+        voices.forget()      # and at the narrator's voice
         try:
             conn.close()
         except Exception:
@@ -1546,6 +1562,8 @@ def start_download(body):
 def start_kit(kit_id):
     """Download whatever a kit is still missing."""
     kit = KIT.get(str(kit_id))
+    if kit is not None and kit["kind"] == "voice":
+        return start_voice_pull()
     if kit is None or kit["kind"] not in ("files", "fast"):
         raise ValueError("That is not a kit I can download.")
     if not COMFY_DIR.is_dir():
@@ -1584,6 +1602,22 @@ def start_writer_pull(model=None):
             raise ValueError("A writing model is already downloading.")
         job = _new_job(kind="ollama", kit="writer", title=f"Script writer: {model}", repo=model, format="OLLAMA",
                        dest="", root="", files={model: 0}, total=kit["suggest"]["bytes"] if model == kit["suggest"]["model"] else 1)
+        _enqueue(job)
+    return job_view(job)
+
+
+def start_voice_pull():
+    """Ask Ollama to download the narrator's voice model."""
+    kit = KIT["voices"]
+    if voices.state(block=True)["ready"]:
+        raise ValueError("The narrator's voices are already here.")
+    if not writer_status(max_age=0)["running"]:
+        raise ValueError("Ollama is not running. Start it (or open the Movies page once, which starts it), then try again.")
+    with jobs_lock:
+        if any(j["kind"] == "ollama" and j["state"] in ("queued", "running") for j in jobs):
+            raise ValueError("Ollama is already downloading something. Try again when that is done.")
+        job = _new_job(kind="ollama", kit="voices", title=kit["title"], repo=kit["model"], format="OLLAMA",
+                       dest="", root="", files={kit["model"]: 0}, total=kit["bytes"])
         _enqueue(job)
     return job_view(job)
 

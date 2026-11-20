@@ -34,12 +34,15 @@ the whole thing sits in a room, a concert hall or a cathedral. Under the instrum
 sounds: drones, risers, deep hits, a heartbeat, a ticking pulse, wind, rain, the sea, bells, thunder. They are
 all made by the app itself, so there is nothing to download for them, and one box switches them off.
 
-Three extras, each a kit of its own on the Models page. **Recorded drums and percussion** put real recordings
+Four extras, each a kit of its own on the Models page. **Recorded drums and percussion** put real recordings
 in place of the drums the app makes itself: seven drum kits for the drum machine and for scores, an orchestra's
 percussion (concert bass drum, snare, cymbals, tam-tam, triangle), hand percussion, and recorded film sounds
 (a gong, a cymbal swell, a huge drum, wind chimes, a bowed cymbal). The other two make sound itself instead of
 a score: **a song with singing**, written and sung on your computer as the movie's music, and **the sounds of
 each shot** (footsteps, rain, traffic), made from a sentence about what is heard there and mixed under the music.
+The fourth is **a narrator**: every shot has a narration line, and a voice you pick from about forty reads the
+lines aloud over the movie, while the music dips under the voice and comes back up after it. The voice is made
+on your computer too.
 
 ![The music studio with a film cue open](docs/music-studio.jpg)
 
@@ -59,7 +62,7 @@ can be downloaded, but the movie maker only knows how to drive the families its 
 - About 65 GB of free disk space. A complete install measured 55 GB: 43 GB for the picture and video models,
   7 GB for the writing model and 5 GB for the engine and its tools. The rest is room to work. The extra kits
   are not counted in that: songs with singing is 10 GB more, the sounds of each shot 3.5 GB, the recorded drums
-  0.2 GB.
+  0.2 GB, the narrator's voices 0.1 GB.
 - For music: a [Claude Code](https://claude.com/claude-code) sign-in (Claude composes) and Chrome, Chromium,
   Edge or Brave (one of them plays the score into an audio file, out of sight). Everything else works without them.
 
@@ -126,6 +129,7 @@ awake, starting the engine (on the processor), downloading a model file from Hug
 page, and stopping a download. Last, `Start Storyboard.bat` starts the app.
 
 What is not checked: drawing pictures, filming clips, finishing Fast video, songs, the sounds of the shots,
+the narrator (Ollama cannot speak on Windows yet),
 writing a script, composing music (it needs your Claude sign-in), and how long anything takes.
 
 ## How long things take
@@ -142,6 +146,7 @@ Measured on a Mac mini (M4, 24 GB), at 832x480 for video:
 | Music for a short movie | about 2 minutes |
 | A song with singing for a one-minute movie | about 2 and a half minutes |
 | The sounds of the shots of a one-minute movie | about a minute and a half |
+| Reading a movie's narration lines aloud | seconds |
 | Joining the movie | seconds |
 
 A 30-second movie (six 5-second shots) is about an hour and a half of work for the Mac, which is what Night
@@ -160,7 +165,8 @@ mode is for.
   from two repositories on GitHub, also as a kit.
 
 A song with singing and the sounds of each shot are made entirely on your computer: the words and the
-descriptions are written by the local writing model, and nothing about them is sent anywhere.
+descriptions are written by the local writing model, and nothing about them is sent anywhere. The narrator
+speaks on your computer as well: the lines never leave it.
 
 The app listens on `127.0.0.1` only, so other devices on your network cannot reach it. Sheet-music files can
 run code, so do not expose it to a network.
@@ -173,6 +179,7 @@ run code, so do not expose it to a network.
 | `storyboard/index.html` | The Movies page. |
 | `storyboard/music.py`, `storyboard/music/` | The Music section: engraving, composing, the gallery, audio files, and the studio pages. |
 | `storyboard/percussion.py` | The recorded drums: fetches the recordings and cuts them into the sounds the studio plays. |
+| `storyboard/voices.py` | The narrator: asks the voice model for a spoken line, evens out its loudness, and lays the lines on one track. |
 | `storyboard/models.py`, `storyboard/models.html` | The Models section: kits, the downloader, and which file each job uses. |
 | `storyboard/comfy_nodes/` | Two small ComfyUI nodes the app installs: one for GGUF prompt readers, one that turns generated audio into sound. |
 | `setup.command`, `Start Storyboard.command` | The installer and the launcher. |
@@ -193,6 +200,14 @@ to `pip install` for the app itself.
 - The Fast video kit finishes with one step on your own Mac (about 10 GB is written) the first time.
 - How the music sounds was set by measuring recordings (loudness over time, tone, width), not by ear, so the
   balance between instruments is a starting point. The knobs on the Sound desk are there to change it.
+- The narrator is new, and so far for Apple silicon Macs only. Its voices come from a small model called Phonon
+  (made by Gradium, English, Apache 2.0) that Ollama downloads and runs; Ollama has to be version 0.40.9 or newer.
+  The voice is good for calm narration. Write numbers and initials the way they are said if it stumbles on them.
+  A line that takes longer to say than its shot lasts runs on into the next shot, and the page tells you so.
+  How far the music dips was set by measurement (11 dB under a spoken line, less or more if you choose), not by
+  ear. A larger voice model that can be given a voice described in words, or copy one from a short recording
+  (Qwen3-TTS, Apache 2.0), would fit behind the same few functions in `storyboard/voices.py`; it needs a Python
+  environment of its own and a few gigabytes, and is not built in.
 - Songs with singing and the sounds of each shot are new. Both ran on the test Mac, from the first word to the
   finished movie, and what they made was checked by measurement (length, loudness, where the energy sits), which
   says a rain sound is a rain sound but not whether a song is a good one. The words of a song and the

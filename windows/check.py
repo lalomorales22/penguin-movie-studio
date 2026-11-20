@@ -18,6 +18,8 @@ More options are there for GitHub's machines, which are thrown away after each r
   --claude     Claude Code has to be found (the workflow installs it first)
   --ollama     Ollama has to be found and running (setup installs it)
   --gguf       the engine has to load the GGUF add-on (setup -Gguf installs it)
+  --voice      the narrator has to read two lines aloud and the movie has to carry them (needs the Narrator voices
+               kit, which only works on Apple silicon Macs so far)
   --download   really download from Hugging Face through the Models page: the Fast video add-on (332 MB) into the
                engine's models folder, and then the start of the Video kit, which is stopped after a few megabytes
                to see that stopping works. Do not use it on a computer you keep: it leaves those files there.
@@ -50,6 +52,7 @@ KEEP = "--keep" in sys.argv
 CLAUDE = "--claude" in sys.argv
 OLLAMA = "--ollama" in sys.argv
 GGUF = "--gguf" in sys.argv
+VOICE = "--voice" in sys.argv
 DOWNLOAD = "--download" in sys.argv
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 RESULTS = []
@@ -301,6 +304,39 @@ def main():
                     raise RuntimeError("the job failed: " + str(failed[-1].get("error")))
                 time.sleep(1)
             raise RuntimeError("no movie within 3 minutes")
+
+        if VOICE:
+            @check("the narrator reads two lines aloud and they are laid over the movie")
+            def _():
+                st = web.get("/api/state")
+                assert st["narrator"]["ready"], "no voice here: " + st["narrator"]["why"]
+                before = web.project(pid).get("movie")
+                for s, line in zip(web.project(pid)["shots"], ("One.", "Two.")):
+                    web.post(f"/api/project/{pid}/shot/{s['id']}", {"caption": line})
+                web.post(f"/api/project/{pid}", {"narrator": {"on": True}})
+                web.post(f"/api/project/{pid}/narrator/make")
+                deadline = time.time() + 120
+                while True:
+                    p = web.project(pid)
+                    jobs = [j for j in web.get("/api/state")["jobs"] if j.get("project") == pid]
+                    failed = [j for j in jobs if j.get("status") == "failed"]
+                    if failed:
+                        raise RuntimeError("the job failed: " + str(failed[-1].get("error")))
+                    if p.get("movie") != before and not any(j.get("status") in ("waiting", "running") for j in jobs):
+                        break
+                    if time.time() > deadline:
+                        raise RuntimeError("no movie with the narrator within 2 minutes")
+                    time.sleep(1)
+                for s in p["shots"]:
+                    head = (data / "projects" / pid / "media" / str(s.get("voice"))).read_bytes()[:4]
+                    assert head == b"RIFF", "a spoken line is not a sound file: " + repr(head)
+                movie = data / "projects" / pid / "exports" / p["movie"]
+                exe = shutil.which("ffprobe") or str(Path(shutil.which("ffmpeg")).with_name("ffprobe"))
+                r = subprocess.run([exe, "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name", "-of",
+                                    "default=nw=1:nk=1", str(movie)], capture_output=True, text=True, encoding="utf-8", errors="replace")
+                assert r.stdout.strip(), "the movie has no sound: the narrator is not in it"
+                said = sum(float(s.get("voice_seconds") or 0) for s in p["shots"])
+                return f"the voice {p['narrator']['voice']} (one of {len(st['narrator']['voices'])}), {said:.1f} seconds of speech, {p['movie']}"
 
         @check("a picture of your own becomes a character picture")
         def _():

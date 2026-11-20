@@ -436,6 +436,25 @@ function kitCard(k) {
       body += '<div class="knote">Ollama is running, but it has no writing model yet.</div>';
       acts = `<button class="primary kbtn" data-pull="${esc(k.suggest.model)}">Download ${esc(k.suggest.model)} (${size(k.suggest.bytes)})</button>`;
     }
+  } else if (k.kind === 'voice') {
+    // The narrator's voice: Ollama downloads it and does the speaking.
+    const w = k.writer, v = k.voice;
+    body += `<div class="ksize">${size(k.bytes)}, about forty voices</div>`;
+    if (k.licence && k.licence.note) body += `<div class="klic">${esc(k.licence.note)} <a href="${esc(k.licence.url)}" target="_blank" rel="noopener">The model's page</a></div>`;
+    if (k.job) {
+      body += `<div class="knote">Downloading${k.job.note ? ' · ' + esc(k.job.note) : ''}</div>` + progressBlock(k.job);
+      acts = `<button class="small" data-cancel="${k.job.id}">Cancel</button>`;
+    } else if (v.ready) {
+      body += `<div class="knote">${v.voices.length} voices on this computer: <span class="mono">${esc(names(v.voices.filter(x => x !== 'default')))}</span>. Choose one in a movie's Narrator box, where you can also listen to each.</div>`;
+    } else if (!w.installed) {
+      body += '<div class="knote">The voices come through Ollama, which is not installed. Get it from <a href="https://ollama.com" target="_blank" rel="noopener">ollama.com</a>, or run ' + setupFile() + ' in the app\'s folder, then come back here.</div>';
+    } else if (!w.running) {
+      body += '<div class="knote">Ollama is installed but not running right now. Open the Movies page once and it starts by itself.</div>';
+    } else {
+      if (k.last && k.last.state === 'error') body += `<div class="err">${esc(plainError(k.last.error))}</div>`;
+      if (onWindows() || (ST && ST.system === 'Linux')) body += '<div class="knote dim">Ollama can only speak on Apple silicon Macs so far, so on this computer the download may not work yet.</div>';
+      acts = `<button class="primary kbtn" data-kitdl="${k.id}">${k.last && k.last.state === 'error' ? 'Try again' : `Download (${size(k.bytes)})`}</button>`;
+    }
   } else if (k.kind === 'sounds') {
     const have = music ? +music.sounds || 0 : k.have, want = music ? +music.sounds_wanted || k.wanted : k.wanted;
     state = have >= want ? 'ready' : have ? 'partial' : 'missing';
